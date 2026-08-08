@@ -1,0 +1,272 @@
+import { useEffect, useState } from "react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import { formatCompact, formatCurrency, formatDay, formatNumber } from "@/lib/social/format";
+import type { SeriesPoint } from "@/lib/social/analytics";
+import type { OrganicPaidSplit } from "@/lib/social/types";
+
+const ORGANIC_COLOR = "oklch(0.74 0.18 50)"; // accent
+const PAID_COLOR = "oklch(0.62 0.16 258)"; // primary
+const AXIS_COLOR = "oklch(0.72 0.012 270)";
+const GRID_COLOR = "oklch(1 0 0 / 8%)";
+
+/**
+ * Recharts mede o container no cliente. Só montamos os gráficos depois da
+ * hidratação para o HTML do servidor não divergir do primeiro render.
+ */
+function ChartFrame({ height, children }: { height: number; children: React.ReactElement }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  if (!mounted) {
+    return <div className="animate-pulse rounded-xl bg-secondary/50" style={{ height }} />;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      {children}
+    </ResponsiveContainer>
+  );
+}
+
+type TooltipEntry = { name?: string; value?: number; color?: string; dataKey?: string };
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  formatter = formatNumber,
+}: {
+  active?: boolean;
+  payload?: TooltipEntry[];
+  label?: string | number;
+  formatter?: (value: number) => string;
+}) {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
+      <div className="mb-1 font-medium">{typeof label === "string" ? formatDay(label) : label}</div>
+      {payload.map((entry) => (
+        <div key={entry.dataKey} className="flex items-center gap-2 py-0.5">
+          <span className="size-2 rounded-full" style={{ background: entry.color }} />
+          <span className="text-muted-foreground">{entry.name}</span>
+          <span className="ml-auto font-semibold tabular-nums">{formatter(entry.value ?? 0)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Curva de seguidores — a evolução histórica da conta (PRD 3.2). */
+export function GrowthChart({ data, height = 260 }: { data: SeriesPoint[]; height?: number }) {
+  return (
+    <ChartFrame height={height}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <defs>
+          <linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={ORGANIC_COLOR} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={ORGANIC_COLOR} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis
+          dataKey="date"
+          tickFormatter={formatDay}
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          minTickGap={28}
+        />
+        <YAxis
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={formatCompact}
+          width={52}
+          domain={["dataMin - 100", "dataMax + 100"]}
+        />
+        <Tooltip content={<ChartTooltip />} />
+        <Area
+          type="monotone"
+          dataKey="followers"
+          name="Seguidores"
+          stroke={ORGANIC_COLOR}
+          strokeWidth={2}
+          fill="url(#growthFill)"
+        />
+      </AreaChart>
+    </ChartFrame>
+  );
+}
+
+/** Alcance orgânico x pago no tempo (PRD 3.2, comparativo). */
+export function ReachChart({ data, height = 260 }: { data: SeriesPoint[]; height?: number }) {
+  return (
+    <ChartFrame height={height}>
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis
+          dataKey="date"
+          tickFormatter={formatDay}
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          minTickGap={28}
+        />
+        <YAxis
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={formatCompact}
+          width={52}
+        />
+        <Tooltip content={<ChartTooltip />} cursor={{ fill: "oklch(1 0 0 / 4%)" }} />
+        <Bar
+          dataKey="organicReach"
+          name="Orgânico"
+          stackId="reach"
+          fill={ORGANIC_COLOR}
+          radius={[0, 0, 0, 0]}
+        />
+        <Bar
+          dataKey="paidReach"
+          name="Pago"
+          stackId="reach"
+          fill={PAID_COLOR}
+          radius={[4, 4, 0, 0]}
+        />
+      </BarChart>
+    </ChartFrame>
+  );
+}
+
+export function SpendChart({ data, height = 200 }: { data: SeriesPoint[]; height?: number }) {
+  return (
+    <ChartFrame height={height}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <defs>
+          <linearGradient id="spendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={PAID_COLOR} stopOpacity={0.4} />
+            <stop offset="100%" stopColor={PAID_COLOR} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis
+          dataKey="date"
+          tickFormatter={formatDay}
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          minTickGap={28}
+        />
+        <YAxis
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={(value: number) => formatCompact(value)}
+          width={52}
+        />
+        <Tooltip content={<ChartTooltip formatter={formatCurrency} />} />
+        <Area
+          type="monotone"
+          dataKey="adSpend"
+          name="Investimento"
+          stroke={PAID_COLOR}
+          strokeWidth={2}
+          fill="url(#spendFill)"
+        />
+      </AreaChart>
+    </ChartFrame>
+  );
+}
+
+/** Participação de orgânico e pago no alcance do período. */
+export function SplitDonut({ split, height = 200 }: { split: OrganicPaidSplit; height?: number }) {
+  const data = [
+    { name: "Orgânico", value: split.organic.reach, color: ORGANIC_COLOR },
+    { name: "Pago", value: split.paid.reach, color: PAID_COLOR },
+  ];
+  const total = data.reduce((sum, entry) => sum + entry.value, 0);
+
+  if (total === 0) {
+    return (
+      <div className="grid place-items-center text-sm text-muted-foreground" style={{ height }}>
+        Sem alcance registrado no período.
+      </div>
+    );
+  }
+
+  return (
+    <ChartFrame height={height}>
+      <PieChart>
+        <Pie
+          data={data}
+          dataKey="value"
+          innerRadius="58%"
+          outerRadius="82%"
+          paddingAngle={2}
+          stroke="none"
+        >
+          {data.map((entry) => (
+            <Cell key={entry.name} fill={entry.color} />
+          ))}
+        </Pie>
+        <Tooltip content={<ChartTooltip />} />
+      </PieChart>
+    </ChartFrame>
+  );
+}
+
+/** Horários de maior atividade do público (PRD 3.2, análise de público). */
+export function ActivityChart({
+  data,
+  height = 180,
+}: {
+  data: { hour: number; activity: number }[];
+  height?: number;
+}) {
+  return (
+    <ChartFrame height={height}>
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis
+          dataKey="hour"
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={(hour: number) => `${hour}h`}
+          interval={2}
+        />
+        <YAxis stroke={AXIS_COLOR} fontSize={11} tickLine={false} axisLine={false} width={40} />
+        <Tooltip
+          content={({ active, payload, label }) => (
+            <ChartTooltip active={active} payload={payload as TooltipEntry[]} label={`${label}h`} />
+          )}
+          cursor={{ fill: "oklch(1 0 0 / 4%)" }}
+        />
+        <Bar dataKey="activity" name="Interações" fill={ORGANIC_COLOR} radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ChartFrame>
+  );
+}

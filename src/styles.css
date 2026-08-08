@@ -1,0 +1,131 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-card-elevated: var(--card-elevated);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+
+  --font-display: "Inter", system-ui, sans-serif;
+}
+
+:root {
+  --radius: 1rem;
+
+  /* Base escura */
+  --background: oklch(0.13 0.012 270);          /* #0B0B0F */
+  --foreground: oklch(1 0 0);                   /* #FFFFFF */
+
+  --card: oklch(0.16 0.015 270);                /* #14141A */
+  --card-foreground: oklch(1 0 0);
+  --card-elevated: oklch(0.19 0.018 270);
+
+  --popover: oklch(0.16 0.015 270);
+  --popover-foreground: oklch(1 0 0);
+
+  /* Marca: azul escuro */
+  --primary: oklch(0.42 0.16 258);              /* deep blue */
+  --primary-foreground: oklch(1 0 0);
+
+  /* Accent: Laranja */
+  --accent: oklch(0.74 0.18 50);                /* warm orange */
+  --accent-foreground: oklch(0.15 0.01 270);
+
+  --secondary: oklch(0.22 0.02 270);
+  --secondary-foreground: oklch(0.98 0 0);
+
+  --muted: oklch(0.22 0.015 270);
+  --muted-foreground: oklch(0.72 0.012 270);    /* #A1A1AA-ish */
+
+  --destructive: oklch(0.62 0.21 25);
+  --destructive-foreground: oklch(1 0 0);
+
+  --success: oklch(0.72 0.17 150);
+  --success-foreground: oklch(0.12 0.01 270);
+
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.74 0.18 50 / 60%);
+
+  --sidebar: oklch(0.13 0.012 270);
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(0.42 0.16 258);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.19 0.018 270);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.74 0.18 50 / 60%);
+
+  /* Gradientes e sombras da marca */
+  --gradient-brand: linear-gradient(135deg, oklch(0.42 0.16 258), oklch(0.32 0.14 268));
+  --gradient-accent: linear-gradient(135deg, oklch(0.78 0.19 55), oklch(0.66 0.21 35));
+
+  --shadow-glow-accent: 0 0 0 1px oklch(0.74 0.18 50 / 25%), 0 20px 60px -20px oklch(0.74 0.18 50 / 40%);
+  --shadow-card: 0 1px 0 0 oklch(1 0 0 / 4%) inset, 0 30px 60px -30px oklch(0 0 0 / 60%);
+}
+
+.dark { color-scheme: dark; }
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body, #root { height: 100%; }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 80% -10%, oklch(0.42 0.16 258 / 18%), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, oklch(0.74 0.18 50 / 10%), transparent 60%);
+    background-attachment: fixed;
+  }
+}
+
+@utility surface-card {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-card);
+}
+
+@utility brand-chip {
+  background: var(--gradient-accent);
+  color: var(--accent-foreground);
+}
+
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.9); }
+}
+@utility live-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
