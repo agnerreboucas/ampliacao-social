@@ -36,6 +36,21 @@ function readStored<T>(key: string): T | null {
   }
 }
 
+/**
+ * O storage pode estar indisponível — navegação privada, cookies bloqueados ou
+ * a página rodando dentro de um iframe restrito. Nesses casos a sessão vale
+ * apenas enquanto a aba estiver aberta, em vez de a tela quebrar no login.
+ */
+function writeStored(key: string, value: unknown | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Sessão fica só em memória.
+  }
+}
+
 export function SocialSessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -55,22 +70,22 @@ export function SocialSessionProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const signIn = useCallback((next: Session) => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    writeStored(STORAGE_KEY, next);
     setSession(next);
     const first = next.projects[0]?.id ?? null;
-    if (first) window.localStorage.setItem(PROJECT_KEY, JSON.stringify(first));
+    if (first) writeStored(PROJECT_KEY, first);
     setProjectIdState(first);
   }, []);
 
   const signOut = useCallback(() => {
-    window.localStorage.removeItem(STORAGE_KEY);
-    window.localStorage.removeItem(PROJECT_KEY);
+    writeStored(STORAGE_KEY, null);
+    writeStored(PROJECT_KEY, null);
     setSession(null);
     setProjectIdState(null);
   }, []);
 
   const setProjectId = useCallback((next: string) => {
-    window.localStorage.setItem(PROJECT_KEY, JSON.stringify(next));
+    writeStored(PROJECT_KEY, next);
     setProjectIdState(next);
   }, []);
 

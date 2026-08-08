@@ -35,6 +35,7 @@ semeados — cada um exerce um papel diferente:
 | `/social/relatorios` | 3.6 — geração e compartilhamento |
 | `/social/equipe` | 3.7 — usuários e permissões |
 | `/relatorio/$token` | 3.6 — página pública somente leitura (sem sessão) |
+| `/oauth/retorno` | 3.1 — retorno da autorização da Meta e escolha das contas |
 
 ## Camadas
 
@@ -46,6 +47,9 @@ src/lib/social/format.ts       formatação pt-BR (números, moeda, datas, rótu
 src/lib/social/permissions.ts  o que cada papel pode acessar na interface
 src/lib/social/session.tsx     sessão do cliente + seletor de projeto
 src/lib/social/store.server.ts persistência (hoje em memória, semeada de forma determinística)
+src/lib/social/oauth/*         integração oficial com a Meta (OAuth + Graph API)
+src/lib/social/cripto.server.ts  cifragem dos tokens das redes
+src/lib/social/credenciais.server.ts  cofre de credenciais e state do OAuth
 src/lib/api/social.functions.ts  API: toda leitura/escrita passa por server functions
 src/components/social/*        primitivas de UI, gráficos (recharts) e editor de post
 ```
@@ -70,29 +74,50 @@ Real, e implementado como o produto pede:
 - Preservação do histórico: desconectar uma conta não apaga suas métricas.
 - Relatório público somente leitura, que responde apenas enquanto o link estiver ativo.
 
+**Conexão real com a Meta** (Instagram e Facebook) está implementada e é ligada por
+variáveis de ambiente — ver [integracao-meta.md](./integracao-meta.md). Sem elas a
+plataforma segue em modo demonstração e a tela de contas explica o que falta; com
+elas, o botão passa a abrir a autorização oficial da Meta:
+
+| Etapa | Onde |
+| --- | --- |
+| URL do diálogo e escopos por funcionalidade | `src/lib/social/oauth/meta.ts` |
+| Troca de código, token longo, descoberta de contas, insights | `src/lib/social/oauth/meta.server.ts` |
+| Tokens cifrados em repouso (AES-256-GCM) | `src/lib/social/cripto.server.ts` |
+| Cofre de credenciais e `state` anti-CSRF | `src/lib/social/credenciais.server.ts` |
+| Tela de retorno com escolha das contas | `src/routes/oauth.retorno.tsx` |
+
 Simulado, porque este ambiente não tem credenciais nem banco:
 
-- **OAuth das redes.** `conectarConta` cria a conexão direto, sem o handshake real. A troca de
-  `code` por token de longa duração entra aqui.
+- **Publicar, impulsionar e responder nas redes.** A conexão e a leitura de
+  métricas chamam a Graph API de verdade; os endpoints de escrita entram depois
+  da revisão das permissões pela Meta, que é o que os libera.
 - **Autenticação.** `autenticar` valida o e-mail contra os usuários semeados e o cliente guarda a
   sessão no `localStorage`. Ao plugar um provedor de identidade (ou cookie de sessão assinado), só
   `session.tsx` e essa função mudam.
-- **Sincronização.** O histórico diário de cada conta é gerado por um PRNG semeado pelo id da
-  conta — mesma entrada, mesma curva. No lugar dele entra o job periódico que lê as APIs oficiais.
+- **Sincronização automática.** `sincronizarContaReal` lê a Graph API de verdade
+  quando a conta foi conectada por OAuth, mas ainda é disparada por botão: falta
+  o job periódico. As contas de demonstração continuam com histórico gerado por
+  um PRNG semeado pelo id da conta — mesma entrada, mesma curva.
 - **Tempo real da inbox.** A tela consulta o servidor a cada 15s e o store libera interações de uma
   fila para demonstrar a chegada de mensagens novas. Em produção isso vira webhook.
-- **Persistência.** O store vive em memória do processo: reiniciar o servidor recompõe a semente e
-  descarta o que foi criado durante a sessão.
+- **Persistência.** O store e o cofre de credenciais vivem em memória do
+  processo: reiniciar o servidor recompõe a semente e exige reconectar as contas.
+  É o próximo passo obrigatório antes de operar com clientes.
 
 ## Próximos passos para produção
 
-1. Banco (Postgres) com as tabelas espelhando `types.ts`; `store.server.ts` vira o repositório.
-2. App na Meta com as permissões de `instagram_manage_insights`, `pages_manage_posts`,
-   `pages_messaging` e `ads_management`, e o fluxo de revisão correspondente.
-3. Cofre de tokens criptografados por projeto + rotação automática antes de `tokenExpiresAt`.
-4. Fila de jobs para sincronização, publicação agendada e reprocessamento em falha de API.
-5. Webhooks de comentários e mensagens substituindo o polling da caixa de entrada.
-6. Retenção e anonimização dos dados de público conforme a LGPD.
+1. Banco (Postgres) com as tabelas espelhando `types.ts`; `store.server.ts` e
+   `credenciais.server.ts` viram repositórios.
+2. App na Meta e App Review das permissões — o passo a passo está em
+   [integracao-meta.md](./integracao-meta.md).
+3. Rotação automática de token antes de `tokenExpiresAt` (a cifragem em repouso
+   já existe).
+4. Autorização por sessão nas funções de servidor: hoje elas confiam no
+   `projectId` que o cliente envia.
+5. Fila de jobs para sincronização, publicação agendada e reprocessamento em falha de API.
+6. Webhooks de comentários e mensagens substituindo o polling da caixa de entrada.
+7. Retenção e anonimização dos dados de público conforme a LGPD.
 
 Adicionar uma rede nova exige apenas uma entrada em `NETWORKS` (`networks.ts`) com seus limites e
 capacidades — nenhum outro módulo precisa mudar.

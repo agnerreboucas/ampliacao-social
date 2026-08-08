@@ -90,6 +90,7 @@ function LoginScreen() {
             <input
               id="email"
               type="email"
+              autoComplete="email"
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -104,6 +105,7 @@ function LoginScreen() {
             <input
               id="senha"
               type="password"
+              autoComplete="current-password"
               required
               value={senha}
               onChange={(event) => setSenha(event.target.value)}

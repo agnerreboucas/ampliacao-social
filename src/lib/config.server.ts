@@ -24,3 +24,29 @@ export function getServerConfig() {
     //   stripeSecretKey: process.env.STRIPE_SECRET_KEY,
   };
 }
+
+/**
+ * Configuração da integração com a Meta (Facebook e Instagram).
+ *
+ * Enquanto o app da Meta não existir, `habilitada` é falso e a plataforma segue
+ * no modo demonstração — nada quebra, a tela apenas explica o que falta. Ao
+ * preencher as três variáveis, o botão "Conectar" passa a abrir o OAuth real.
+ *
+ * Passo a passo de como obter cada valor: docs/integracao-meta.md
+ */
+export function getMetaConfig() {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  const redirectUri = process.env.META_REDIRECT_URI;
+
+  return {
+    appId,
+    appSecret,
+    redirectUri,
+    /** Ajuste quando a Meta descontinuar a versão em uso. */
+    versaoGraph: process.env.META_GRAPH_VERSION,
+    /** Chave para cifrar tokens em repouso — `openssl rand -base64 32`. */
+    chaveCriptografia: process.env.SOCIAL_CRYPTO_KEY,
+    habilitada: Boolean(appId && appSecret && redirectUri),
+  };
+}

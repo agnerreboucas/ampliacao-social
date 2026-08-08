@@ -21,6 +21,13 @@ export type SocialAccount = {
   handle: string;
   displayName: string;
   status: ConnectionStatus;
+  /**
+   * Como a conta entrou na plataforma: `oauth` é conexão real autorizada pela
+   * rede; `demonstracao` são as contas semeadas, que não falam com a API.
+   */
+  origem: "oauth" | "demonstracao";
+  /** ID da conta na rede (Página do Facebook ou perfil profissional do Instagram). */
+  externalId?: string;
   /** Conta de anúncios conectada — pré-requisito do impulsionamento (PRD 3.4). */
   adAccountConnected: boolean;
   /** Início do acompanhamento: origem da linha do tempo de evolução (PRD 3.2). */

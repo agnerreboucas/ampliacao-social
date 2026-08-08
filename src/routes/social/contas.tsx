@@ -3,17 +3,26 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   AlertTriangle,
   BadgeDollarSign,
+  Copy,
   Link2,
   LoaderCircle,
   MessageSquareWarning,
   Plug,
   RefreshCw,
+  ShieldCheck,
   Unplug,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { atualizarConexao, conectarConta, listarContas } from "@/lib/api/social.functions";
+import {
+  atualizarConexao,
+  conectarConta,
+  iniciarConexaoMeta,
+  listarContas,
+  sincronizarContaReal,
+  situacaoIntegracao,
+} from "@/lib/api/social.functions";
 import {
   AccountAvatar,
   ConnectionPill,
@@ -53,6 +62,44 @@ function ContasPage() {
     enabled: Boolean(projectId),
   });
 
+  const integracao = useQuery({
+    queryKey: ["social", "integracao"],
+    queryFn: () => situacaoIntegracao(),
+  });
+
+  /**
+   * Conectar de verdade: pedimos ao servidor a URL do diálogo da Meta e levamos
+   * a pessoa para lá. Ela autoriza no site da Meta e volta em /oauth/retorno.
+   */
+  const conexaoReal = useMutation({
+    mutationFn: () =>
+      iniciarConexaoMeta({
+        data: { projectId: projectId!, grupos: ["leitura", "publicacao", "atendimento"] },
+      }),
+    onSuccess: (resultado) => {
+      if (resultado.modo === "oauth") {
+        window.location.href = resultado.url;
+        return;
+      }
+      toast.error(resultado.erro);
+      setDialogOpen(true);
+    },
+    onError: () => toast.error("Não foi possível iniciar a conexão com a Meta."),
+  });
+
+  const sincronizacaoReal = useMutation({
+    mutationFn: (accountId: string) => sincronizarContaReal({ data: { accountId, dias: 28 } }),
+    onSuccess: (resultado) => {
+      if (!resultado.ok) {
+        toast.error(resultado.erro);
+        return;
+      }
+      invalidate();
+      toast.success(`Sincronização concluída: ${resultado.dias} dia(s) atualizados.`);
+    },
+    onError: () => toast.error("A sincronização falhou."),
+  });
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["social"] });
   };
@@ -87,13 +134,29 @@ function ContasPage() {
         actions={
           <button
             type="button"
-            onClick={() => setDialogOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            disabled={conexaoReal.isPending || !projectId}
+            onClick={() =>
+              integracao.data?.habilitada ? conexaoReal.mutate() : setDialogOpen(true)
+            }
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
           >
-            <Plug className="size-4" /> Conectar conta
+            {conexaoReal.isPending ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <Plug className="size-4" />
+            )}
+            {integracao.data?.habilitada ? "Conectar com Facebook" : "Conectar conta"}
           </button>
         }
       />
+
+      {integracao.data ? (
+        <SituacaoIntegracao
+          habilitada={integracao.data.habilitada}
+          faltando={integracao.data.faltando}
+          redirectUri={integracao.data.redirectUri}
+        />
+      ) : null}
 
       {contas.isPending ? (
         <LoadingBlock rows={4} />
@@ -111,7 +174,7 @@ function ContasPage() {
             const busy = conexao.isPending && conexao.variables?.accountId === account.id;
 
             return (
-              <article key={account.id} className="surface-card p-5">
+              <article key={account.id} className="surface-card min-w-0 p-5">
                 <header className="flex items-start gap-4">
                   <AccountAvatar
                     gradient={account.avatarGradient}
@@ -144,6 +207,13 @@ function ContasPage() {
                 </dl>
 
                 <div className="mt-4 flex flex-wrap gap-2">
+                  {account.origem === "oauth" ? (
+                    <StatusPill tone="positivo">
+                      <ShieldCheck className="size-3" /> Conexão autorizada pela rede
+                    </StatusPill>
+                  ) : (
+                    <StatusPill tone="neutro">Conta de demonstração</StatusPill>
+                  )}
                   {!network.supportsAudienceInsights ? (
                     <StatusPill tone="neutro">Sem dados de público na API</StatusPill>
                   ) : null}
@@ -418,5 +488,97 @@ function ConectarContaDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Mostra se a conexão oficial está disponível.
+ *
+ * Quando falta configuração, em vez de esconder o botão explicamos exatamente
+ * quais variáveis de ambiente preencher e qual URL de retorno cadastrar no app
+ * da Meta — é o que desbloqueia a integração.
+ */
+function SituacaoIntegracao({
+  habilitada,
+  faltando,
+  redirectUri,
+}: {
+  habilitada: boolean;
+  faltando: string[];
+  redirectUri: string | null;
+}) {
+  if (habilitada) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-success/40 bg-success/10 px-4 py-3 text-sm">
+        <ShieldCheck className="size-4 shrink-0 text-success" />
+        <span>
+          Integração com a Meta ativa. Ao clicar em{" "}
+          <span className="font-medium">Conectar com Facebook</span>, você autoriza na página da
+          Meta e volta com as contas prontas para escolher.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <SectionCard
+      title="Conectar de verdade com Instagram e Facebook"
+      description="Faltam poucos passos para o botão abrir a autorização oficial da Meta."
+      icon={Plug}
+    >
+      <p className="text-sm text-muted-foreground">
+        Enquanto isso, a plataforma segue em modo demonstração: as contas são de exemplo e nenhuma
+        chamada é feita às redes.
+      </p>
+
+      <ol className="mt-4 space-y-2 text-sm">
+        <li className="flex gap-2">
+          <span className="text-muted-foreground">1.</span>
+          <span>
+            Crie um aplicativo em <span className="text-foreground">developers.facebook.com</span>{" "}
+            do tipo Empresa e adicione o produto Login do Facebook.
+          </span>
+        </li>
+        <li className="flex gap-2">
+          <span className="text-muted-foreground">2.</span>
+          <span>
+            Cadastre esta URL de retorno no aplicativo:{" "}
+            <code className="rounded bg-secondary px-1.5 py-0.5 text-xs">
+              {redirectUri ?? "https://seu-dominio/oauth/retorno"}
+            </code>
+            {redirectUri ? (
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(redirectUri);
+                  toast.success("URL copiada.");
+                }}
+                className="ml-2 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+              >
+                <Copy className="size-3" /> copiar
+              </button>
+            ) : null}
+          </span>
+        </li>
+        <li className="flex gap-2">
+          <span className="text-muted-foreground">3.</span>
+          <span>
+            Preencha as variáveis de ambiente que faltam:{" "}
+            {faltando.map((nome, indice) => (
+              <span key={nome}>
+                <code className="rounded bg-secondary px-1.5 py-0.5 text-xs">{nome}</code>
+                {indice < faltando.length - 1 ? ", " : ""}
+              </span>
+            ))}
+            .
+          </span>
+        </li>
+      </ol>
+
+      <p className="mt-4 text-xs text-muted-foreground">
+        O passo a passo completo, com a lista de permissões e o que a Meta exige na revisão, está em{" "}
+        <span className="text-foreground">docs/integracao-meta.md</span>.
+      </p>
+    </SectionCard>
   );
 }

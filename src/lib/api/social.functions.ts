@@ -8,9 +8,32 @@ import {
   splitOrganicPaid,
   summarize,
 } from "@/lib/social/analytics";
+import { getMetaConfig } from "@/lib/config.server";
+import {
+  consumirState,
+  descartarDescoberta,
+  guardarDescoberta,
+  lerCredencial,
+  registrarState,
+  removerCredencial,
+  revelarToken,
+  salvarCredencial,
+  temCredencial,
+  lerDescoberta,
+} from "@/lib/social/credenciais.server";
 import { NETWORKS, hasBlockingIssues, validateDraft } from "@/lib/social/networks";
+import { montarEscopos, montarUrlAutorizacao, type GrupoEscopo } from "@/lib/social/oauth/meta";
+import {
+  buscarInsights,
+  descobrirContas,
+  explicarErro,
+  gerarState,
+  obterTokenLongaDuracao,
+  trocarCodigoPorToken,
+} from "@/lib/social/oauth/meta.server";
 import {
   getDb,
+  mesclarMetricas,
   nextId,
   releaseIncoming,
   sortPostsByRecency,
@@ -186,6 +209,7 @@ export const conectarConta = createServerFn({ method: "POST" })
       handle: data.handle,
       displayName: data.displayName,
       status: "ativa",
+      origem: "demonstracao",
       adAccountConnected: false,
       trackingSince: toDayKey(now),
       tokenExpiresAt: toDayKey(new Date(now.getTime() + 60 * 86400000)),
@@ -775,4 +799,312 @@ export const obterRelatorioPublico = createServerFn({ method: "POST" })
       posts,
       boosts: db.boosts.filter((boost) => report.accountIds.includes(boost.accountId)),
     };
+  });
+
+// ---------------------------------------------------------------------------
+// Conexão real com a Meta — Facebook e Instagram (PRD 3.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Diz à interface se a integração oficial está configurada.
+ *
+ * Sem as variáveis do app da Meta a plataforma continua utilizável em modo
+ * demonstração; a tela de contas explica o que falta em vez de oferecer um
+ * botão que não funcionaria.
+ */
+export const situacaoIntegracao = createServerFn({ method: "POST" }).handler(async () => {
+  const config = getMetaConfig();
+  const faltando: string[] = [];
+  if (!config.appId) faltando.push("META_APP_ID");
+  if (!config.appSecret) faltando.push("META_APP_SECRET");
+  if (!config.redirectUri) faltando.push("META_REDIRECT_URI");
+  if (!config.chaveCriptografia) faltando.push("SOCIAL_CRYPTO_KEY");
+
+  return {
+    habilitada: config.habilitada && Boolean(config.chaveCriptografia),
+    faltando,
+    redirectUri: config.redirectUri ?? null,
+  };
+});
+
+const gruposEscopo = z
+  .array(z.enum(["leitura", "publicacao", "atendimento", "anuncios"]))
+  .min(1)
+  .default(["leitura", "publicacao", "atendimento"]);
+
+/**
+ * Passo 1 do "Conectar com Facebook": devolve a URL do diálogo oficial.
+ *
+ * A pessoa autoriza na página da Meta e volta para `META_REDIRECT_URI`. Nenhuma
+ * senha passa pela plataforma — é a própria Meta que autentica.
+ */
+export const iniciarConexaoMeta = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string(), grupos: gruposEscopo }))
+  .handler(async ({ data }) => {
+    const config = getMetaConfig();
+    if (!config.habilitada || !config.appId || !config.redirectUri) {
+      return {
+        modo: "demonstracao" as const,
+        erro: "A integração com a Meta ainda não foi configurada neste ambiente.",
+      };
+    }
+    if (!config.chaveCriptografia) {
+      return {
+        modo: "demonstracao" as const,
+        erro: "Defina SOCIAL_CRYPTO_KEY antes de conectar contas reais — o token precisa ser cifrado.",
+      };
+    }
+
+    const escopos = montarEscopos(data.grupos as GrupoEscopo[]);
+    const state = gerarState();
+    registrarState({ state, projectId: data.projectId, escopos });
+
+    return {
+      modo: "oauth" as const,
+      url: montarUrlAutorizacao({
+        appId: config.appId,
+        redirectUri: config.redirectUri,
+        state,
+        escopos,
+        versaoGraph: config.versaoGraph,
+      }),
+    };
+  });
+
+/**
+ * Passo 2: a Meta devolveu o `code`. Trocamos por um token de longa duração e
+ * listamos as contas que a pessoa administra, para ela escolher quais conectar.
+ *
+ * Os tokens ficam no servidor: a interface recebe apenas nome, @ e rede.
+ */
+export const concluirConexaoMeta = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ code: z.string().min(1), state: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const config = getMetaConfig();
+    if (!config.habilitada || !config.appId || !config.appSecret || !config.redirectUri) {
+      return { ok: false as const, erro: "A integração com a Meta não está configurada." };
+    }
+
+    const pedido = consumirState(data.state);
+    if (!pedido) {
+      return {
+        ok: false as const,
+        erro: "Este pedido de autorização expirou ou não foi reconhecido. Comece a conexão de novo.",
+      };
+    }
+
+    const credenciaisMeta = {
+      appId: config.appId,
+      appSecret: config.appSecret,
+      redirectUri: config.redirectUri,
+      versaoGraph: config.versaoGraph,
+    };
+
+    try {
+      const tokenCurto = await trocarCodigoPorToken(credenciaisMeta, data.code);
+      const { token, expiraEm } = await obterTokenLongaDuracao(credenciaisMeta, tokenCurto);
+      const contas = await descobrirContas(credenciaisMeta, token);
+
+      if (contas.length === 0) {
+        return {
+          ok: false as const,
+          erro:
+            "Nenhuma Página encontrada nesta conta. O Instagram precisa ser profissional e estar " +
+            "vinculado a uma Página do Facebook que você administre.",
+        };
+      }
+
+      const db = getDb();
+      const descobertaId = nextId("desc");
+      guardarDescoberta({
+        id: descobertaId,
+        projectId: pedido.projectId,
+        escopos: pedido.escopos,
+        contas: contas.map((conta) => ({
+          ...conta,
+          // A validade do token de usuário acompanha as contas descobertas.
+          accessToken: conta.accessToken,
+        })),
+      });
+
+      return {
+        ok: true as const,
+        descobertaId,
+        expiraEmSegundos: expiraEm,
+        contas: contas.map((conta) => ({
+          externalId: conta.externalId,
+          networkId: conta.networkId,
+          displayName: conta.displayName,
+          handle: conta.handle,
+          jaConectada: db.accounts.some(
+            (existente) =>
+              existente.externalId === conta.externalId && existente.projectId === pedido.projectId,
+          ),
+        })),
+      };
+    } catch (erro) {
+      console.error("Falha ao concluir a conexão com a Meta:", erro);
+      return { ok: false as const, erro: explicarErro(erro) };
+    }
+  });
+
+/** Passo 3: grava as contas escolhidas e guarda cada token cifrado. */
+export const conectarContasEscolhidas = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ descobertaId: z.string(), externalIds: z.array(z.string()).min(1) }))
+  .handler(async ({ data }) => {
+    const descoberta = lerDescoberta(data.descobertaId);
+    if (!descoberta) {
+      return {
+        ok: false as const,
+        erro: "A escolha expirou. Refaça a conexão para listar as contas de novo.",
+      };
+    }
+
+    const db = getDb();
+    const agora = new Date();
+    const conectadas: SocialAccount[] = [];
+
+    for (const externalId of data.externalIds) {
+      const conta = descoberta.contas.find((candidata) => candidata.externalId === externalId);
+      if (!conta) continue;
+
+      const jaExiste = db.accounts.find(
+        (existente) =>
+          existente.externalId === externalId && existente.projectId === descoberta.projectId,
+      );
+
+      const registro: SocialAccount = jaExiste ?? {
+        id: nextId("acc"),
+        projectId: descoberta.projectId,
+        networkId: conta.networkId,
+        handle: conta.handle,
+        displayName: conta.displayName,
+        status: "ativa",
+        origem: "oauth",
+        externalId,
+        adAccountConnected: descoberta.escopos.includes("ads_management"),
+        // Conta nova começa a acompanhar hoje; a sincronização traz o histórico
+        // que a rede permitir e a curva cresce a partir daí.
+        trackingSince: toDayKey(agora),
+        tokenExpiresAt: toDayKey(new Date(agora.getTime() + 60 * 86400000)),
+        lastSyncAt: null,
+        messagingApproved: descoberta.escopos.includes("pages_messaging"),
+        avatarGradient: "linear-gradient(135deg, oklch(0.62 0.2 40), oklch(0.4 0.18 300))",
+      };
+
+      // Reconexão: a conta volta a ficar ativa e mantém o histórico já guardado.
+      registro.status = "ativa";
+      registro.origem = "oauth";
+      registro.handle = conta.handle;
+      registro.displayName = conta.displayName;
+      registro.tokenExpiresAt = toDayKey(new Date(agora.getTime() + 60 * 86400000));
+
+      if (!jaExiste) {
+        db.accounts.push(registro);
+        db.metrics.set(registro.id, []);
+        db.audience.set(registro.id, {
+          available: false,
+          unavailableReason:
+            "Os dados de público aparecem depois da primeira sincronização com a rede.",
+          newFollowers: 0,
+          unfollows: 0,
+          topInteractors: [],
+          activityByHour: [],
+          topCities: [],
+        });
+      }
+
+      salvarCredencial({
+        accountId: registro.id,
+        externalId,
+        instagramId: conta.instagramId,
+        token: conta.accessToken,
+        expiraEm: null,
+        escopos: descoberta.escopos,
+      });
+
+      conectadas.push(registro);
+    }
+
+    descartarDescoberta(data.descobertaId);
+
+    if (conectadas.length === 0) {
+      return { ok: false as const, erro: "Nenhuma conta foi selecionada." };
+    }
+    return { ok: true as const, contas: conectadas };
+  });
+
+/**
+ * Sincroniza uma conta conectada de verdade com a Graph API.
+ *
+ * Contas de demonstração não têm credencial e continuam com os dados semeados —
+ * a tela avisa em vez de fingir que buscou.
+ */
+export const sincronizarContaReal = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({ accountId: z.string(), dias: z.number().int().min(1).max(30).default(28) }),
+  )
+  .handler(async ({ data }) => {
+    const config = getMetaConfig();
+    const db = getDb();
+    const account = db.accounts.find((candidate) => candidate.id === data.accountId);
+    if (!account) throw new Error("Conta não encontrada.");
+
+    if (!temCredencial(account.id) || !config.habilitada || !config.appId || !config.appSecret) {
+      return {
+        ok: false as const,
+        erro: "Esta conta não tem conexão real. Conecte pela Meta para sincronizar dados de verdade.",
+      };
+    }
+
+    const credencial = lerCredencial(account.id)!;
+    const token = revelarToken(account.id);
+    if (!token) {
+      return { ok: false as const, erro: "Credencial ausente; reconecte a conta." };
+    }
+
+    const ate = new Date();
+    const desde = new Date(ate.getTime() - data.dias * 86400000);
+
+    try {
+      const metricas = await buscarInsights(
+        {
+          appId: config.appId,
+          appSecret: config.appSecret,
+          redirectUri: config.redirectUri!,
+          versaoGraph: config.versaoGraph,
+        },
+        {
+          externalId: credencial.externalId,
+          instagramId: credencial.instagramId,
+          accessToken: token,
+        },
+        { desde: toDayKey(desde), ate: toDayKey(ate) },
+      );
+
+      const gravados = mesclarMetricas(account.id, metricas);
+      account.lastSyncAt = new Date().toISOString();
+      account.status = "ativa";
+
+      return { ok: true as const, dias: gravados, account };
+    } catch (erro) {
+      console.error(`Falha ao sincronizar ${account.id}:`, erro);
+      // Token revogado é estado da conexão, não erro passageiro.
+      account.status = String(erro).includes("190") ? "expirada" : account.status;
+      return { ok: false as const, erro: explicarErro(erro) };
+    }
+  });
+
+/** Desconectar remove a credencial, mas preserva o histórico já sincronizado. */
+export const desconectarContaReal = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ accountId: z.string() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const account = db.accounts.find((candidate) => candidate.id === data.accountId);
+    if (!account) throw new Error("Conta não encontrada.");
+
+    removerCredencial(account.id);
+    account.status = "desconectada";
+    account.tokenExpiresAt = null;
+    return { ok: true as const, account };
   });

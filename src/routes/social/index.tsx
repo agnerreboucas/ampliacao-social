@@ -188,11 +188,13 @@ function PainelPage() {
                   key={account.id}
                   to="/social/conta/$accountId"
                   params={{ accountId: account.id }}
-                  className="flex items-center gap-4 rounded-xl border border-border p-4 transition-colors hover:bg-secondary/50"
+                  className="flex min-w-0 items-center gap-4 rounded-xl border border-border p-4 transition-colors hover:bg-secondary/50"
                 >
                   <AccountAvatar gradient={account.avatarGradient} label={account.displayName} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    {/* Em telas estreitas o chip da rede desce para a linha de
+                        baixo em vez de comer o espaço do nome da conta. */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="truncate font-medium">{account.displayName}</span>
                       <NetworkChip networkId={account.networkId} />
                     </div>

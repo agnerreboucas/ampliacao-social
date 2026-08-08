@@ -151,6 +151,7 @@ function buildAccountSeeds(today: Date): AccountSeed[] {
       handle: "@mercadinhoperfeito",
       displayName: "Mercadinho Perfeito",
       status: "ativa",
+      origem: "demonstracao",
       adAccountConnected: true,
       trackingSince: toDayKey(addDays(today, -430)),
       tokenExpiresAt: toDayKey(addDays(today, 41)),
@@ -167,6 +168,7 @@ function buildAccountSeeds(today: Date): AccountSeed[] {
       handle: "/mercadinhoperfeito",
       displayName: "Mercadinho Perfeito",
       status: "ativa",
+      origem: "demonstracao",
       adAccountConnected: true,
       trackingSince: toDayKey(addDays(today, -430)),
       tokenExpiresAt: toDayKey(addDays(today, 41)),
@@ -183,6 +185,7 @@ function buildAccountSeeds(today: Date): AccountSeed[] {
       handle: "@studioaurora",
       displayName: "Studio Aurora",
       status: "ativa",
+      origem: "demonstracao",
       adAccountConnected: false,
       trackingSince: toDayKey(addDays(today, -260)),
       tokenExpiresAt: toDayKey(addDays(today, 12)),
@@ -199,6 +202,7 @@ function buildAccountSeeds(today: Date): AccountSeed[] {
       handle: "/studioaurora",
       displayName: "Studio Aurora",
       status: "expirada",
+      origem: "demonstracao",
       adAccountConnected: false,
       trackingSince: toDayKey(addDays(today, -260)),
       tokenExpiresAt: toDayKey(addDays(today, -6)),
@@ -215,6 +219,7 @@ function buildAccountSeeds(today: Date): AccountSeed[] {
       handle: "@mercadinhoperfeito",
       displayName: "Mercadinho Perfeito",
       status: "erro_permissao",
+      origem: "demonstracao",
       adAccountConnected: false,
       trackingSince: toDayKey(addDays(today, -95)),
       tokenExpiresAt: toDayKey(addDays(today, 20)),
@@ -747,6 +752,27 @@ export function releaseIncoming(intervalMs = 45000): InboxItem | null {
   db.inbox.unshift(item);
   db.lastIncomingAt = now;
   return item;
+}
+
+/**
+ * Junta os dias vindos da rede ao histórico já guardado.
+ *
+ * Sincronizar é acumulativo: um dia que a API devolveu de novo é atualizado, e
+ * dias fora da janela sincronizada continuam intactos — é o que sustenta
+ * "histórico preservado mesmo com a conta desconectada" (PRD 3.2).
+ */
+export function mesclarMetricas(accountId: string, dias: DailyMetric[]): number {
+  const db = getDb();
+  const atuais = db.metrics.get(accountId) ?? [];
+  const porData = new Map(atuais.map((dia) => [dia.date, dia]));
+
+  for (const dia of dias) {
+    porData.set(dia.date, dia);
+  }
+
+  const mescladas = [...porData.values()].sort((a, b) => a.date.localeCompare(b.date));
+  db.metrics.set(accountId, mescladas);
+  return dias.length;
 }
 
 export function nextId(prefix: string): string {

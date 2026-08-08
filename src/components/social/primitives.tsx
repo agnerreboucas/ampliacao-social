@@ -41,7 +41,7 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <section className={cn("surface-card p-5 md:p-6", className)}>
+    <section className={cn("surface-card min-w-0 p-5 md:p-6", className)}>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           {Icon ? (
@@ -117,7 +117,7 @@ export function NetworkChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium",
         className,
       )}
     >
