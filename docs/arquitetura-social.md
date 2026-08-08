@@ -50,7 +50,8 @@ src/lib/social/permissions.ts  o que cada papel pode acessar na interface
 src/lib/social/relacionamento.ts  graus de relação, consolidação por pessoa e regra de envio em lote
 src/lib/social/atualizacao.ts  entrada manual: aplicar valores ao histórico e comparar leituras do dia
 src/lib/social/snapshot.ts     o estado como arquivo JSON, versionado e validado
-src/lib/social/snapshot.server.ts  leitura e gravação do arquivo em disco
+src/lib/social/snapshot.server.ts  escolhe entre banco e arquivo, e grava
+src/lib/social/banco/*        esquema, mapeamento e acesso ao Postgres
 src/lib/social/post-analytics.ts  desempenho por publicação (divisão por conta, curva, engajamento)
 src/lib/social/session.tsx     sessão do cliente + seletor de projeto
 src/lib/social/store.server.ts persistência (hoje em memória, semeada de forma determinística)
@@ -80,6 +81,11 @@ Real, e implementado como o produto pede:
 - Isolamento por projeto em todos os módulos e permissões por papel.
 - Preservação do histórico: desconectar uma conta não apaga suas métricas.
 - Relatório público somente leitura, que responde apenas enquanto o link estiver ativo.
+
+**Banco de dados.** Com `DATABASE_URL` definida, o estado vive em Postgres
+(Neon, Supabase, qualquer um) em vez do arquivo JSON — ver
+[banco-de-dados.md](./banco-de-dados.md). A troca acontece em um ponto só:
+`snapshot.server.ts`. Nenhuma função de servidor mudou por causa dela.
 
 **Atualização manual dos números.** Enquanto a leitura automática depende da
 App Review, os números entram à mão e o estado vive em `dados/plataforma.json`,
@@ -120,16 +126,15 @@ Simulado, porque este ambiente não tem credenciais nem banco:
   um PRNG semeado pelo id da conta — mesma entrada, mesma curva.
 - **Tempo real da inbox.** A tela consulta o servidor a cada 15s e o store libera interações de uma
   fila para demonstrar a chegada de mensagens novas. Em produção isso vira webhook.
-- **Persistência.** O cofre de credenciais vive em memória do processo:
-  reiniciar exige reconectar as contas. Os dados do produto, esses, sobrevivem —
-  ficam em `dados/plataforma.json`, gravado a cada atualização manual. Um banco
-  de verdade continua sendo o passo seguinte para operar com vários clientes em
-  paralelo.
+- **Persistência.** Resolvida: com `DATABASE_URL` o estado fica em Postgres, e
+  sobrevive a reinício, deploy e troca de máquina. Sem ela, fica em
+  `dados/plataforma.json`. O que continua em memória é o cofre de credenciais das
+  redes — reiniciar ainda exige reconectar as contas conectadas por OAuth.
 
 ## Próximos passos para produção
 
-1. Banco (Postgres) com as tabelas espelhando `types.ts`; `store.server.ts` e
-   `credenciais.server.ts` viram repositórios.
+1. ~~Banco (Postgres) com as tabelas espelhando `types.ts`.~~ Feito — falta
+   mover `credenciais.server.ts` (os tokens das redes) para o banco também.
 2. App na Meta e App Review das permissões — o passo a passo está em
    [integracao-meta.md](./integracao-meta.md).
 3. Rotação automática de token antes de `tokenExpiresAt` (a cifragem em repouso

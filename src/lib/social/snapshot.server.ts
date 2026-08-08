@@ -1,25 +1,69 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
+import {
+  bancoConfigurado,
+  carregarDoBanco,
+  garantirEsquema,
+  gravarNoBanco,
+} from "./banco/postgres.server";
 import { SnapshotInvalido, desserializar, serializar } from "./snapshot";
 import type { EstadoPersistivel } from "./snapshot";
 
 /**
- * O snapshot no disco.
+ * Onde o estado da plataforma fica guardado.
  *
- * O caminho padrão é um arquivo dentro do próprio repositório, e isso é
- * intencional: o fluxo de trabalho é digitar os números, gravar, commitar e
- * empurrar para o Git. O versionamento dos dados sai de graça junto com o do
- * código — quem mudou qual número, quando, e como voltar atrás.
+ * Dois destinos, escolhidos por uma variável de ambiente:
  *
- * `SOCIAL_DADOS_ARQUIVO` troca o caminho em quem hospeda a aplicação com o
- * diretório de trabalho em outro lugar.
+ * - **`DATABASE_URL` definida** → Postgres (Neon, Supabase, o que for). É o
+ *   caminho para operar com cliente de verdade: escrita concorrente, backup do
+ *   provedor, e nada que dependa do disco da máquina que roda a aplicação.
+ * - **sem `DATABASE_URL`** → o arquivo `dados/plataforma.json`, que vai para o
+ *   Git. Continua sendo o caminho de custo zero, e é o que a demonstração usa.
+ *
+ * A troca não exige mudar mais nada: as duas pontas falam `EstadoPersistivel`,
+ * e é por isso que a aplicação inteira ignora qual delas está ativa.
  */
 
 const CAMINHO_PADRAO = "dados/plataforma.json";
 
 export function caminhoDoArquivo(): string {
   return resolve(process.cwd(), process.env.SOCIAL_DADOS_ARQUIVO ?? CAMINHO_PADRAO);
+}
+
+/** Descrição do destino atual, para a tela dizer onde os dados estão. */
+export function destinoDosDados(): { tipo: "postgres" | "arquivo"; descricao: string } {
+  if (bancoConfigurado()) {
+    return { tipo: "postgres", descricao: descreverBanco() };
+  }
+  return { tipo: "arquivo", descricao: caminhoDoArquivo() };
+}
+
+/**
+ * O endereço do banco sem a senha.
+ *
+ * A tela mostra onde os dados estão; a senha do banco não tem por que aparecer
+ * em tela nenhuma, e menos ainda em um print que alguém manda por WhatsApp.
+ */
+function descreverBanco(): string {
+  const url = process.env.DATABASE_URL ?? "";
+  try {
+    const { hostname, pathname } = new URL(url);
+    return `${hostname}${pathname}`;
+  } catch {
+    return "banco de dados";
+  }
+}
+
+// --- Leitura ----------------------------------------------------------------
+
+export async function carregarEstadoInicial(): Promise<EstadoPersistivel | null> {
+  if (bancoConfigurado()) {
+    // O esquema é criado na primeira subida; nas seguintes o DDL não faz nada.
+    await garantirEsquema();
+    return carregarDoBanco();
+  }
+  return carregarSnapshot();
 }
 
 /**
@@ -45,18 +89,46 @@ export function carregarSnapshot(): EstadoPersistivel | null {
   }
 }
 
-export function gravarSnapshot(estado: EstadoPersistivel): {
+// --- Escrita ----------------------------------------------------------------
+
+export type ResultadoGravacao = {
   gravado: boolean;
-  caminho: string | null;
-} {
+  /** Onde foi parar, já sem credencial. `null` quando não deu para gravar. */
+  destino: string | null;
+  tipo: "postgres" | "arquivo";
+  erro?: string;
+};
+
+export async function gravarEstado(estado: EstadoPersistivel): Promise<ResultadoGravacao> {
+  if (bancoConfigurado()) {
+    try {
+      await gravarNoBanco(estado);
+      return { gravado: true, destino: descreverBanco(), tipo: "postgres" };
+    } catch (erro) {
+      // Não engolir: se o banco recusou a escrita, quem digitou precisa saber
+      // agora — e o botão de baixar o arquivo continua sendo a saída.
+      return {
+        gravado: false,
+        destino: null,
+        tipo: "postgres",
+        erro: erro instanceof Error ? erro.message : "Falha ao gravar no banco.",
+      };
+    }
+  }
+
   const caminho = caminhoDoArquivo();
   try {
     mkdirSync(dirname(caminho), { recursive: true });
     writeFileSync(caminho, serializar(estado), "utf8");
-    return { gravado: true, caminho };
-  } catch {
+    return { gravado: true, destino: caminho, tipo: "arquivo" };
+  } catch (erro) {
     // Hospedagem com disco somente leitura é um caso real. A tela continua
     // funcionando e o botão de baixar o arquivo vira o caminho de saída.
-    return { gravado: false, caminho: null };
+    return {
+      gravado: false,
+      destino: null,
+      tipo: "arquivo",
+      erro: erro instanceof Error ? erro.message : "Falha ao gravar o arquivo.",
+    };
   }
 }

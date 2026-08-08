@@ -4,18 +4,28 @@ import type { EstadoPersistivel } from "../lib/social/snapshot";
 /**
  * Substituto de `snapshot.server.ts` no build estático.
  *
- * No navegador não existe `node:fs` — mas existe o próprio documento. O
- * `build-html.mjs` embute o conteúdo de `dados/plataforma.json` em uma tag
- * `<script type="application/json">`, e é dela que os números saem aqui.
+ * No navegador não existe `node:fs` nem driver de Postgres — mas existe o
+ * próprio documento. O `build-html.mjs` embute o conteúdo de
+ * `dados/plataforma.json` em uma tag `<script type="application/json">`, e é
+ * dela que os números saem aqui.
  *
  * É o que fecha o ciclo que o cliente pediu: digitar os números, commitar o
  * JSON, e o HTML publicado já abrir com eles — sem servidor e sem custo mensal.
+ *
+ * Este arquivo precisa exportar a mesma superfície de `snapshot.server.ts`. Se
+ * uma função nova aparecer lá e não aqui, o build estático quebra na hora — que
+ * é o comportamento desejado: melhor falhar no build do que publicar um HTML
+ * que quebra na mão de quem recebeu o link.
  */
 
 const ID_DA_TAG = "dados-plataforma";
 
 export function caminhoDoArquivo(): string {
   return "(embutido no HTML)";
+}
+
+export function destinoDosDados(): { tipo: "postgres" | "arquivo"; descricao: string } {
+  return { tipo: "arquivo", descricao: "embutido neste HTML" };
 }
 
 export function carregarSnapshot(): EstadoPersistivel | null {
@@ -36,12 +46,28 @@ export function carregarSnapshot(): EstadoPersistivel | null {
   }
 }
 
+export async function carregarEstadoInicial(): Promise<EstadoPersistivel | null> {
+  return carregarSnapshot();
+}
+
+export type ResultadoGravacao = {
+  gravado: boolean;
+  destino: string | null;
+  tipo: "postgres" | "arquivo";
+  erro?: string;
+};
+
 /**
  * Gravar não existe aqui — o HTML é um arquivo, não um servidor.
  *
  * A tela trata `gravado: false` mostrando o botão de baixar como o caminho para
  * não perder o que foi digitado.
  */
-export function gravarSnapshot(): { gravado: boolean; caminho: string | null } {
-  return { gravado: false, caminho: null };
+export async function gravarEstado(): Promise<ResultadoGravacao> {
+  return {
+    gravado: false,
+    destino: null,
+    tipo: "arquivo",
+    erro: "Esta é a demonstração em HTML: o que você digita vive só nesta aba. Use “Baixar” para guardar.",
+  };
 }

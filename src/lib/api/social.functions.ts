@@ -32,7 +32,7 @@ import {
   variacaoEntre,
 } from "@/lib/social/atualizacao";
 import { desserializar, nomeDoArquivo, serializar } from "@/lib/social/snapshot";
-import { caminhoDoArquivo } from "@/lib/social/snapshot.server";
+import { destinoDosDados } from "@/lib/social/snapshot.server";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
 import { CONECTORES_SOCIAIS } from "@/lib/social/windsor/windsor";
 import {
@@ -1556,7 +1556,7 @@ export const situacaoAtualizacao = createServerFn({ method: "POST" })
       contas,
       date: hoje,
       porConta,
-      arquivo: caminhoDoArquivo(),
+      destino: destinoDosDados(),
       totalRegistros: db.atualizacoes.length,
     };
   });
@@ -1601,7 +1601,7 @@ export const registrarAtualizacao = createServerFn({ method: "POST" })
     );
     conta.lastSyncAt = registro.registradaEm;
 
-    const gravacao = persistir();
+    const gravacao = await persistir();
 
     return {
       registro,
@@ -1626,7 +1626,7 @@ export const importarDados = createServerFn({ method: "POST" })
     try {
       const estado = desserializar(data.conteudo);
       substituirEstado(estado);
-      const gravacao = persistir();
+      const gravacao = await persistir();
       return {
         ok: true as const,
         contas: estado.accounts.length,

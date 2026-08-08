@@ -1,6 +1,8 @@
 import { NETWORKS } from "./networks";
 import { classificarPorInteracoes } from "./relacionamento";
-import { carregarSnapshot, gravarSnapshot } from "./snapshot.server";
+import { carregarEstadoInicial, gravarEstado } from "./snapshot.server";
+import type { EstadoPersistivel } from "./snapshot";
+import type { ResultadoGravacao } from "./snapshot.server";
 import type {
   AtualizacaoManual,
   AudienceInsight,
@@ -828,6 +830,25 @@ function createDatabase(): SocialDatabase {
 // `globalThis` evita perder o estado no hot reload do Vite em desenvolvimento.
 const globalStore = globalThis as typeof globalThis & { __socialDb?: SocialDatabase };
 
+/**
+ * O estado guardado, lido uma única vez antes de a aplicação atender qualquer
+ * requisição.
+ *
+ * `await` no topo do módulo é deliberado. Ler do Postgres é assíncrono, e
+ * `getDb()` é chamado de forma síncrona por quarenta funções de servidor —
+ * transformar todas em assíncronas por causa da origem dos dados seria espalhar
+ * uma decisão de infraestrutura pela aplicação inteira. Resolvendo a promessa
+ * aqui, o módulo só termina de carregar quando o estado está pronto, e ninguém
+ * mais precisa saber de onde ele veio.
+ *
+ * Falha de conexão não derruba a aplicação: ela sobe com a semente e registra o
+ * erro. Uma tela que abre com aviso é melhor do que um processo que não sobe.
+ */
+const estadoGuardado: EstadoPersistivel | null = await carregarEstadoInicial().catch((erro) => {
+  console.error("Não foi possível carregar o estado guardado; usando a semente.", erro);
+  return null;
+});
+
 export function getDb(): SocialDatabase {
   if (!globalStore.__socialDb) {
     globalStore.__socialDb = criarOuRestaurar();
@@ -842,7 +863,7 @@ export function getDb(): SocialDatabase {
  * lado produziria uma base que não corresponde a nada que alguém digitou.
  */
 function criarOuRestaurar(): SocialDatabase {
-  const salvo = carregarSnapshot();
+  const salvo = estadoGuardado;
   const base = createDatabase();
   if (!salvo) return base;
 
@@ -862,12 +883,12 @@ function criarOuRestaurar(): SocialDatabase {
 }
 
 /** Grava o estado atual no arquivo que vai para o Git. */
-export function persistir(): { gravado: boolean; caminho: string | null } {
-  return gravarSnapshot(getDb());
+export function persistir(): Promise<ResultadoGravacao> {
+  return gravarEstado(getDb());
 }
 
 /** Substitui o estado inteiro — usado ao carregar um arquivo enviado pela tela. */
-export function substituirEstado(estado: ReturnType<typeof carregarSnapshot>): void {
+export function substituirEstado(estado: EstadoPersistivel | null): void {
   if (!estado) return;
   const base = getDb();
   globalStore.__socialDb = {

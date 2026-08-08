@@ -17,6 +17,12 @@ dist-static
 .nitro
 *.local
 
+# Segredos de ambiente: a string de conexão do banco carrega a senha, e o
+# segredo do aplicativo da Meta não pode existir em arquivo versionado.
+.env
+.env.*
+!.env.example
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

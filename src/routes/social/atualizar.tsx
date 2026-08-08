@@ -5,6 +5,7 @@ import {
   ArrowUp,
   Check,
   CloudUpload,
+  Database,
   Download,
   LoaderCircle,
   PencilLine,
@@ -65,6 +66,7 @@ function AtualizarPage() {
 
   const contas = situacao.data?.contas ?? [];
   const porConta = situacao.data?.porConta ?? [];
+  const noBanco = situacao.data?.destino.tipo === "postgres";
 
   const baixar = useMutation({
     mutationFn: () => exportarDados(),
@@ -78,7 +80,11 @@ function AtualizarPage() {
       link.download = resultado.nome;
       link.click();
       URL.revokeObjectURL(url);
-      toast.success("Arquivo baixado. Agora é substituir no repositório e commitar.");
+      toast.success(
+        noBanco
+          ? "Cópia de segurança baixada."
+          : "Arquivo baixado. Agora é substituir no repositório e commitar.",
+      );
     },
     onError: () => toast.error("Não foi possível gerar o arquivo."),
   });
@@ -131,7 +137,7 @@ function AtualizarPage() {
               ) : (
                 <Download className="size-4" />
               )}
-              Baixar para o Git
+              {noBanco ? "Baixar cópia" : "Baixar para o Git"}
             </button>
           </div>
         }
@@ -159,7 +165,7 @@ function AtualizarPage() {
         </p>
         {situacao.data ? (
           <p className="text-[11px] text-muted-foreground">
-            {situacao.data.totalRegistros} registros no arquivo
+            {situacao.data.totalRegistros} leituras guardadas
           </p>
         ) : null}
       </div>
@@ -191,28 +197,52 @@ function AtualizarPage() {
       )}
 
       <SectionCard
-        title="Como isso vai parar no seu HTML"
-        description="O caminho sem servidor e sem custo mensal."
-        icon={PencilLine}
+        title="Onde os números ficam guardados"
+        description={
+          noBanco
+            ? "Banco de dados: o que você salva já está valendo, sem passo manual."
+            : "Arquivo versionado no Git: o caminho sem servidor e sem custo mensal."
+        }
+        icon={noBanco ? Database : PencilLine}
       >
-        <ol className="space-y-2 text-sm text-muted-foreground">
-          <li>
-            <strong className="text-foreground">1.</strong> Digite os números aqui e salve. O
-            arquivo <code className="rounded bg-secondary px-1 text-xs">dados/plataforma.json</code>{" "}
-            é gravado automaticamente.
-          </li>
-          <li>
-            <strong className="text-foreground">2.</strong> Clique em “Baixar para o Git” e
-            substitua esse arquivo no repositório.
-          </li>
-          <li>
-            <strong className="text-foreground">3.</strong> Faça o commit e o push. A automação
-            reconstrói o HTML com os números novos.
-          </li>
-        </ol>
+        {noBanco ? (
+          <ol className="space-y-2 text-sm text-muted-foreground">
+            <li>
+              <strong className="text-foreground">1.</strong> Digite os números aqui e salve. Vai
+              direto para o banco, em uma transação — ou grava tudo, ou não grava nada.
+            </li>
+            <li>
+              <strong className="text-foreground">2.</strong> Pronto. Qualquer pessoa que abrir a
+              plataforma já vê os números novos, sem commit e sem republicar.
+            </li>
+            <li>
+              <strong className="text-foreground">3.</strong> O botão “Baixar” continua servindo
+              para tirar uma cópia de segurança quando você quiser.
+            </li>
+          </ol>
+        ) : (
+          <ol className="space-y-2 text-sm text-muted-foreground">
+            <li>
+              <strong className="text-foreground">1.</strong> Digite os números aqui e salve. O
+              arquivo{" "}
+              <code className="rounded bg-secondary px-1 text-xs">dados/plataforma.json</code> é
+              gravado automaticamente.
+            </li>
+            <li>
+              <strong className="text-foreground">2.</strong> Clique em “Baixar para o Git” e
+              substitua esse arquivo no repositório.
+            </li>
+            <li>
+              <strong className="text-foreground">3.</strong> Faça o commit e o push. A automação
+              reconstrói o HTML com os números novos.
+            </li>
+          </ol>
+        )}
         {situacao.data ? (
-          <p className="mt-3 text-[11px] text-muted-foreground">
-            Arquivo em <code className="rounded bg-secondary px-1">{situacao.data.arquivo}</code>
+          <p className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+            {noBanco ? <Database className="size-3.5" /> : null}
+            {noBanco ? "Banco em" : "Arquivo em"}{" "}
+            <code className="rounded bg-secondary px-1">{situacao.data.destino.descricao}</code>
           </p>
         ) : null}
       </SectionCard>
@@ -258,8 +288,9 @@ function CartaoDaConta({
       setErro(null);
       onSalvo();
       if (!resultado.gravacao.gravado) {
-        toast.warning("Salvo na sessão, mas o arquivo não pôde ser gravado em disco.", {
-          description: "Use “Baixar para o Git” para não perder os números.",
+        toast.warning("Salvo na sessão, mas não foi possível guardar em definitivo.", {
+          description:
+            resultado.gravacao.erro ?? "Use o botão de baixar para não perder os números.",
         });
       } else {
         toast.success(`${conta.displayName}: leitura ${resultado.progresso.feitas} do dia salva.`);
