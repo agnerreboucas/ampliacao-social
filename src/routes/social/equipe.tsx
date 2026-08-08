@@ -149,7 +149,7 @@ function EquipePage() {
 
       <SectionCard
         title="O que cada papel enxerga"
-        description="O isolamento por projeto vale para métricas, publicações, impulsionamentos e caixa de entrada."
+        description="O isolamento por projeto vale para métricas, publicações, impulsionamentos e relacionamento."
         icon={ShieldCheck}
       >
         <ul className="grid gap-3 sm:grid-cols-2">

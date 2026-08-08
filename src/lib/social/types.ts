@@ -2,7 +2,7 @@
 // Escopo restrito à camada social (orgânico + pago). Nada de e-commerce,
 // catálogo, carrinho ou pedidos — ver docs/prd-plataforma-social.md, seção 1.4.
 
-export type NetworkId = "instagram" | "facebook" | "tiktok" | "linkedin";
+export type NetworkId = "instagram" | "facebook" | "tiktok" | "linkedin" | "youtube";
 
 /** Estado da conexão OAuth de um perfil social (PRD 3.1). */
 export type ConnectionStatus = "ativa" | "expirada" | "erro_permissao" | "desconectada";
@@ -111,6 +111,8 @@ export type PostMedia = {
 export type Post = {
   id: string;
   projectId: string;
+  /** Quando esta publicação nasceu de um repost, aponta para a original. */
+  republicadoDe?: string;
   accountIds: string[];
   format: PostFormat;
   caption: string;
@@ -164,6 +166,15 @@ export type Boost = {
   };
 };
 
+/**
+ * Grau de relação da pessoa com o projeto (área de Relacionamento).
+ *
+ * A escada existe porque tratar todo mundo igual desperdiça quem já está do
+ * lado: um defensor merece um convite para amplificar, um não seguidor merece
+ * uma resposta que o aproxime.
+ */
+export type RelacaoPessoa = "nao_seguidor" | "seguidor" | "apoiador" | "defensor";
+
 export type InboxKind = "comentario" | "mensagem";
 export type InboxStatus = "pendente" | "respondido";
 
@@ -187,6 +198,10 @@ export type InboxItem = {
   status: InboxStatus;
   assignedTo: string | null;
   replies: InboxReply[];
+  /** Classificação da pessoa; ajustável à mão na tela de Relacionamento. */
+  relacao: RelacaoPessoa;
+  /** Quantas vezes essa pessoa já interagiu com o projeto. */
+  interacoes: number;
 };
 
 export type UserRole = "administrador" | "gestor" | "editor" | "atendimento";

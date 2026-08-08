@@ -1,4 +1,5 @@
 import { NETWORKS } from "./networks";
+import { classificarPorInteracoes } from "./relacionamento";
 import type {
   AudienceInsight,
   Boost,
@@ -227,6 +228,23 @@ function buildAccountSeeds(today: Date): AccountSeed[] {
       avatarGradient: GRADIENTS[5],
       baseFollowers: 1180,
       dailyGrowth: 14,
+      paidShare: 0,
+    },
+    {
+      id: "acc-yt-mercadinho",
+      projectId: "proj-mercadinho",
+      networkId: "youtube",
+      handle: "@mercadinhoperfeito",
+      displayName: "Mercadinho Perfeito",
+      status: "ativa",
+      origem: "demonstracao",
+      adAccountConnected: false,
+      trackingSince: toDayKey(addDays(today, -140)),
+      tokenExpiresAt: toDayKey(addDays(today, 55)),
+      messagingApproved: false,
+      avatarGradient: GRADIENTS[6 % GRADIENTS.length],
+      baseFollowers: 860,
+      dailyGrowth: 5,
       paidShare: 0,
     },
   ];
@@ -527,6 +545,8 @@ const INBOX_SEED: Array<{
   status: InboxItem["status"];
   postId?: string;
   assignedTo?: string;
+  /** Interações acumuladas — é delas que sai a classificação da pessoa. */
+  interacoes: number;
 }> = [
   {
     accountId: "acc-ig-mercadinho",
@@ -537,6 +557,7 @@ const INBOX_SEED: Array<{
     minutesAgo: 6,
     status: "pendente",
     postId: "post-1",
+    interacoes: 3,
   },
   {
     accountId: "acc-ig-mercadinho",
@@ -546,6 +567,7 @@ const INBOX_SEED: Array<{
     text: "Boa tarde! Vocês entregam em Osasco?",
     minutesAgo: 18,
     status: "pendente",
+    interacoes: 0,
   },
   {
     accountId: "acc-fb-mercadinho",
@@ -556,6 +578,7 @@ const INBOX_SEED: Array<{
     minutesAgo: 42,
     status: "pendente",
     postId: "post-4",
+    interacoes: 7,
   },
   {
     accountId: "acc-fb-mercadinho",
@@ -566,16 +589,29 @@ const INBOX_SEED: Array<{
     minutesAgo: 95,
     status: "pendente",
     assignedTo: "user-diego",
+    interacoes: 12,
   },
   {
     accountId: "acc-ig-mercadinho",
     kind: "comentario",
     handle: "@bia.santos",
     name: "Beatriz Santos",
-    text: "Amei o pão de fermentação natural 👏",
+    text: "Amei o pão de fermentação natural 👏 já indiquei pra todo mundo aqui de casa",
     minutesAgo: 180,
     status: "respondido",
     postId: "post-7",
+    interacoes: 24,
+  },
+  {
+    accountId: "acc-yt-mercadinho",
+    kind: "comentario",
+    handle: "@canal.doleo",
+    name: "Leonardo Prado",
+    text: "Compartilhei esse vídeo em três grupos. Precisando de mais gente pra divulgar, é só falar.",
+    minutesAgo: 210,
+    status: "pendente",
+    postId: "post-2",
+    interacoes: 31,
   },
   {
     accountId: "acc-ig-studio",
@@ -585,6 +621,18 @@ const INBOX_SEED: Array<{
     text: "Tem horário disponível na quinta à tarde?",
     minutesAgo: 240,
     status: "pendente",
+    interacoes: 2,
+  },
+  {
+    accountId: "acc-tt-mercadinho",
+    kind: "comentario",
+    handle: "@duda.oliveira",
+    name: "Eduarda Oliveira",
+    text: "Esse vídeo merecia muito mais visualizações, gente. Salvem e mandem pros amigos!",
+    minutesAgo: 275,
+    status: "pendente",
+    postId: "post-4",
+    interacoes: 18,
   },
   {
     accountId: "acc-ig-mercadinho",
@@ -595,6 +643,39 @@ const INBOX_SEED: Array<{
     minutesAgo: 320,
     status: "respondido",
     postId: "post-2",
+    interacoes: 5,
+  },
+  {
+    accountId: "acc-yt-mercadinho",
+    kind: "comentario",
+    handle: "@sergio.andrade",
+    name: "Sérgio Andrade",
+    text: "Primeiro vídeo de vocês que eu vejo. Vim parar aqui pelo YouTube mesmo.",
+    minutesAgo: 400,
+    status: "pendente",
+    interacoes: 0,
+  },
+  {
+    accountId: "acc-tt-mercadinho",
+    kind: "comentario",
+    handle: "@nanda.lima",
+    name: "Fernanda Lima",
+    text: "Faz mais conteúdo assim! Eu comento em todos 🙌",
+    minutesAgo: 520,
+    status: "pendente",
+    postId: "post-7",
+    interacoes: 41,
+  },
+  {
+    accountId: "acc-fb-mercadinho",
+    kind: "comentario",
+    handle: "@marcos.vinicius",
+    name: "Marcos Vinícius",
+    text: "Passei aqui pela primeira vez hoje, gostei da proposta.",
+    minutesAgo: 610,
+    status: "pendente",
+    postId: "post-1",
+    interacoes: 1,
   },
 ];
 
@@ -613,6 +694,8 @@ function buildInbox(now: Date): InboxItem[] {
       receivedAt: receivedAt.toISOString(),
       status: entry.status,
       assignedTo: entry.assignedTo ?? null,
+      relacao: classificarPorInteracoes(entry.interacoes),
+      interacoes: entry.interacoes,
       replies:
         entry.status === "respondido"
           ? [
@@ -641,6 +724,8 @@ const INCOMING_SEED: Array<Omit<InboxItem, "id" | "receivedAt">> = [
     status: "pendente",
     assignedTo: null,
     replies: [],
+    relacao: "seguidor",
+    interacoes: 4,
   },
   {
     accountId: "acc-fb-mercadinho",
@@ -653,6 +738,8 @@ const INCOMING_SEED: Array<Omit<InboxItem, "id" | "receivedAt">> = [
     status: "pendente",
     assignedTo: null,
     replies: [],
+    relacao: "seguidor",
+    interacoes: 2,
   },
   {
     accountId: "acc-ig-mercadinho",
@@ -665,6 +752,8 @@ const INCOMING_SEED: Array<Omit<InboxItem, "id" | "receivedAt">> = [
     status: "pendente",
     assignedTo: null,
     replies: [],
+    relacao: "seguidor",
+    interacoes: 4,
   },
 ];
 

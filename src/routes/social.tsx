@@ -29,7 +29,7 @@ export const Route = createFileRoute("/social")({
       {
         name: "description",
         content:
-          "Gestão e métricas de redes sociais: crescimento, publicação, impulsionamento e caixa de entrada unificada.",
+          "Gestão e métricas de redes sociais: crescimento, publicação, impulsionamento e relacionamento unificado.",
       },
     ],
   }),
@@ -88,8 +88,8 @@ function SocialShell() {
     { to: "/social/publicacoes", label: "Publicações", icon: Send, ability: "publicar" },
     { to: "/social/impulsionamentos", label: "Impulsionar", icon: Rocket, ability: "impulsionar" },
     {
-      to: "/social/caixa",
-      label: "Caixa de entrada",
+      to: "/social/relacionamento",
+      label: "Relacionamento",
       icon: MessagesSquare,
       ability: "inbox",
       badge: inboxQuery.data?.pendentes,

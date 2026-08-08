@@ -155,7 +155,7 @@ function PainelPage() {
 
           <div className="grid gap-4 lg:grid-cols-3">
             <QuickTile
-              to="/social/caixa"
+              to="/social/relacionamento"
               icon={MessagesSquare}
               label="Interações pendentes"
               value={data.pendingInbox}

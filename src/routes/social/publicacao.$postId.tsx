@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   AtSign,
@@ -11,7 +11,9 @@ import {
   Heart,
   Images,
   Image as ImageIcon,
+  LoaderCircle,
   MessageCircle,
+  Repeat2,
   Rocket,
   Share2,
   TrendingUp,
@@ -19,11 +21,13 @@ import {
   Video,
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
-import { obterPublicacao } from "@/lib/api/social.functions";
+import { obterPublicacao, republicarPublicacao } from "@/lib/api/social.functions";
 import { PostPerformanceChart } from "@/components/social/charts";
 import {
   AccountAvatar,
+  InlineError,
   LoadingBlock,
   NetworkChip,
   PageHeader,
@@ -42,7 +46,8 @@ import {
   formatPercent,
   formatRelative,
 } from "@/lib/social/format";
-import type { PostStatus } from "@/lib/social/types";
+import { useSocialSession } from "@/lib/social/session";
+import type { Post, PostStatus, SocialAccount } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/social/publicacao/$postId")({
@@ -67,6 +72,7 @@ const PROPORCOES: Record<string, string> = {
 
 function PublicacaoPage() {
   const { postId } = Route.useParams();
+  const [repostAberto, setRepostAberto] = useState(false);
 
   const detalhe = useQuery({
     queryKey: ["social", "publicacao", postId],
@@ -106,6 +112,8 @@ function PublicacaoPage() {
     boosts,
     inbox,
     dadosReais,
+    original,
+    reposts,
   } = detalhe.data;
 
   return (
@@ -130,9 +138,39 @@ function PublicacaoPage() {
               {POST_STATUS_LABELS[post.status]}
             </StatusPill>
             {!dadosReais ? <StatusPill tone="neutro">números de demonstração</StatusPill> : null}
+            {post.status === "publicado" ? (
+              <button
+                type="button"
+                onClick={() => setRepostAberto((aberto) => !aberto)}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+              >
+                <Repeat2 className="size-4" />
+                Republicar
+              </button>
+            ) : null}
           </div>
         }
       />
+
+      {original ? (
+        <div className="surface-card flex min-w-0 flex-wrap items-center gap-2 p-3 text-sm">
+          <Repeat2 className="size-4 shrink-0 text-muted-foreground" />
+          <span className="text-muted-foreground">Esta é uma republicação de</span>
+          <Link
+            to="/social/publicacao/$postId"
+            params={{ postId: original.id }}
+            className="text-accent hover:underline"
+          >
+            {original.publishedAt
+              ? `um post de ${formatDateTime(original.publishedAt)}`
+              : "outra publicação"}
+          </Link>
+        </div>
+      ) : null}
+
+      {repostAberto ? (
+        <PainelRepost post={post} contas={contas} onFechar={() => setRepostAberto(false)} />
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_1fr] lg:items-start">
         <VisualizadorDeMidia
@@ -367,12 +405,241 @@ function PublicacaoPage() {
               ))}
             </ul>
           )}
-          <Link to="/social/caixa" className="mt-4 inline-flex text-sm text-accent hover:underline">
-            Abrir caixa de entrada
+          <Link
+            to="/social/relacionamento"
+            className="mt-4 inline-flex text-sm text-accent hover:underline"
+          >
+            Abrir gerenciamento de relacionamento
           </Link>
         </SectionCard>
       </div>
+
+      {reposts.length > 0 ? (
+        <SectionCard
+          title="Republicações desta peça"
+          description="Cada repost tem números próprios — o alcance de um não entra na conta do outro."
+          icon={Repeat2}
+        >
+          <ul className="space-y-2">
+            {reposts.map((repost) => (
+              <li key={repost.id}>
+                <Link
+                  to="/social/publicacao/$postId"
+                  params={{ postId: repost.id }}
+                  className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-secondary/50"
+                >
+                  <StatusPill tone={TONS_STATUS[repost.status]}>
+                    {POST_STATUS_LABELS[repost.status]}
+                  </StatusPill>
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {repost.publishedAt
+                      ? formatDateTime(repost.publishedAt)
+                      : repost.scheduledFor
+                        ? `agendado para ${formatDateTime(repost.scheduledFor)}`
+                        : "sem data"}
+                  </span>
+                  {repost.metrics ? (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatCompact(repost.metrics.reach)} de alcance
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Republicar uma peça que já foi bem.
+ *
+ * A legenda vem preenchida mas editável, e as contas vêm todas marcadas: o
+ * caminho rápido é um clique, e ainda assim dá para mudar o texto ou tirar uma
+ * rede antes de mandar. Repetir a legenda idêntica é o que as redes leem como
+ * conteúdo duplicado — por isso o aviso fica à vista.
+ */
+function PainelRepost({
+  post,
+  contas,
+  onFechar,
+}: {
+  post: Post;
+  contas: SocialAccount[];
+  onFechar: () => void;
+}) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { session } = useSocialSession();
+  const [caption, setCaption] = useState(post.caption);
+  const [accountIds, setAccountIds] = useState<string[]>(post.accountIds);
+  const [acao, setAcao] = useState<"publicar" | "agendar" | "rascunho">("publicar");
+  const [scheduledFor, setScheduledFor] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [issues, setIssues] = useState<{ message: string; severity: string }[]>([]);
+
+  const republicar = useMutation({
+    mutationFn: () =>
+      republicarPublicacao({
+        data: {
+          postId: post.id,
+          createdBy: session?.user.id ?? "user-ana",
+          caption,
+          accountIds,
+          acao,
+          scheduledFor:
+            acao === "agendar" && scheduledFor ? new Date(scheduledFor).toISOString() : null,
+          requiresApproval: false,
+        },
+      }),
+    onSuccess: (resultado) => {
+      if (!resultado.ok) {
+        setErro(resultado.erro ?? "Não foi possível republicar.");
+        setIssues(resultado.issues);
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["social"] });
+      toast.success(
+        acao === "publicar"
+          ? "Republicado agora."
+          : acao === "agendar"
+            ? "Republicação agendada."
+            : "Rascunho da republicação criado.",
+      );
+      onFechar();
+      navigate({ to: "/social/publicacao/$postId", params: { postId: resultado.post.id } });
+    },
+    onError: () => setErro("Não foi possível republicar."),
+  });
+
+  const alternarConta = (accountId: string) =>
+    setAccountIds((atual) =>
+      atual.includes(accountId) ? atual.filter((id) => id !== accountId) : [...atual, accountId],
+    );
+
+  return (
+    <SectionCard
+      title="Republicar esta publicação"
+      description="Nasce uma publicação nova, com métricas próprias e um vínculo com a original."
+      icon={Repeat2}
+    >
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="repost-legenda" className="text-xs text-muted-foreground">
+            Legenda
+          </label>
+          <textarea
+            id="repost-legenda"
+            rows={4}
+            value={caption}
+            onChange={(event) => setCaption(event.target.value)}
+            className="mt-1 w-full resize-y rounded-lg border border-border bg-secondary px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {caption.length} caracteres. Vale mudar alguma coisa: legenda idêntica costuma ser
+            tratada como conteúdo duplicado pelas redes.
+          </p>
+        </div>
+
+        <fieldset className="min-w-0">
+          <legend className="text-xs text-muted-foreground">Onde republicar</legend>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            {contas.map((conta) => (
+              <label
+                key={conta.id}
+                className={cn(
+                  "inline-flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                  accountIds.includes(conta.id)
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:bg-secondary/50",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={accountIds.includes(conta.id)}
+                  onChange={() => alternarConta(conta.id)}
+                  className="size-4 accent-[var(--color-primary)]"
+                />
+                <NetworkChip networkId={conta.networkId} />
+                <span className="truncate">{conta.handle}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label htmlFor="repost-acao" className="text-xs text-muted-foreground">
+              Quando
+            </label>
+            <select
+              id="repost-acao"
+              value={acao}
+              onChange={(event) => setAcao(event.target.value as typeof acao)}
+              className="mt-1 block rounded-lg border border-border bg-secondary px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="publicar">Publicar agora</option>
+              <option value="agendar">Agendar</option>
+              <option value="rascunho">Salvar como rascunho</option>
+            </select>
+          </div>
+
+          {acao === "agendar" ? (
+            <div>
+              <label htmlFor="repost-data" className="text-xs text-muted-foreground">
+                Data e hora
+              </label>
+              <input
+                id="repost-data"
+                type="datetime-local"
+                value={scheduledFor}
+                onChange={(event) => setScheduledFor(event.target.value)}
+                className="mt-1 block rounded-lg border border-border bg-secondary px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              setErro(null);
+              setIssues([]);
+              republicar.mutate();
+            }}
+            disabled={
+              republicar.isPending ||
+              accountIds.length === 0 ||
+              (acao === "agendar" && !scheduledFor)
+            }
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-60"
+          >
+            {republicar.isPending ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <Repeat2 className="size-4" />
+            )}
+            Republicar
+          </button>
+
+          <button
+            type="button"
+            onClick={onFechar}
+            className="rounded-lg border border-border px-3 py-2.5 text-sm hover:bg-secondary"
+          >
+            Cancelar
+          </button>
+        </div>
+
+        {erro ? <InlineError>{erro}</InlineError> : null}
+        {issues
+          .filter((issue) => issue.severity === "erro")
+          .map((issue) => (
+            <InlineError key={issue.message}>{issue.message}</InlineError>
+          ))}
+      </div>
+    </SectionCard>
   );
 }
 

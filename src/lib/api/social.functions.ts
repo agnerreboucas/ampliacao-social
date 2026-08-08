@@ -21,7 +21,8 @@ import {
   temCredencial,
   lerDescoberta,
 } from "@/lib/social/credenciais.server";
-import { NETWORKS, hasBlockingIssues, validateDraft } from "@/lib/social/networks";
+import { NETWORKS, hasBlockingIssues, statusLabel, validateDraft } from "@/lib/social/networks";
+import { aplicarModelo, separarEnviaveis } from "@/lib/social/relacionamento";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
 import { CONECTORES_SOCIAIS } from "@/lib/social/windsor/windsor";
 import {
@@ -194,7 +195,7 @@ export const conectarConta = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       projectId: z.string(),
-      networkId: z.enum(["instagram", "facebook", "tiktok", "linkedin"]),
+      networkId: z.enum(["instagram", "facebook", "tiktok", "linkedin", "youtube"]),
       handle: z.string().min(2),
       displayName: z.string().min(1),
     }),
@@ -527,6 +528,95 @@ export const atualizarPublicacao = createServerFn({ method: "POST" })
     return { ok: true as const, post, issues: [] };
   });
 
+/**
+ * Republica uma publicação que já foi ao ar (repost).
+ *
+ * O que nasce daqui é uma publicação nova, não uma cópia disfarçada: id próprio,
+ * métricas zeradas e `republicadoDe` apontando para a original. Sem essa
+ * separação, o repost herdaria os números do post antigo e o histórico deixaria
+ * de dizer a verdade sobre o que cada peça alcançou.
+ *
+ * A legenda vem editável de propósito — repetir o texto idêntico é o que a rede
+ * lê como conteúdo duplicado.
+ */
+export const republicarPublicacao = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      postId: z.string(),
+      createdBy: z.string(),
+      /** Legenda ajustada; em branco reaproveita a original. */
+      caption: z.string().optional(),
+      /** Subconjunto das contas originais; em branco republica em todas. */
+      accountIds: z.array(z.string()).optional(),
+      acao: z.enum(["publicar", "agendar", "rascunho"]),
+      scheduledFor: z.string().nullable().default(null),
+      requiresApproval: z.boolean().default(false),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const original = db.posts.find((candidate) => candidate.id === data.postId);
+    if (!original) throw new Error("Publicação não encontrada.");
+    if (original.status !== "publicado") {
+      return {
+        ok: false as const,
+        issues: [],
+        erro: "Só dá para republicar uma publicação que já foi ao ar.",
+      };
+    }
+
+    const accountIds =
+      data.accountIds && data.accountIds.length > 0
+        ? original.accountIds.filter((id) => data.accountIds!.includes(id))
+        : original.accountIds;
+    if (accountIds.length === 0) {
+      return { ok: false as const, issues: [], erro: "Escolha ao menos uma conta de destino." };
+    }
+
+    const caption = data.caption?.trim() ? data.caption : original.caption;
+    const contas = db.accounts.filter((account) => accountIds.includes(account.id));
+    const issues = validateDraft(
+      { format: original.format, caption, media: original.media },
+      contas,
+    );
+    if (data.acao !== "rascunho" && hasBlockingIssues(issues)) {
+      return { ok: false as const, issues, erro: null };
+    }
+
+    const agora = new Date();
+    const status: Post["status"] =
+      data.acao === "rascunho"
+        ? "rascunho"
+        : data.requiresApproval
+          ? "aguardando_aprovacao"
+          : data.acao === "publicar"
+            ? "publicado"
+            : "agendado";
+
+    const post: Post = {
+      ...original,
+      id: nextId("post"),
+      republicadoDe: original.id,
+      accountIds,
+      caption,
+      status,
+      scheduledFor: data.acao === "agendar" ? data.scheduledFor : null,
+      publishedAt: status === "publicado" ? agora.toISOString() : null,
+      createdBy: data.createdBy,
+      approvedBy: null,
+      requiresApproval: data.requiresApproval,
+      failureReason: undefined,
+      // Métricas nunca são herdadas: o alcance do repost é dele.
+      metrics:
+        status === "publicado"
+          ? { reach: 0, impressions: 0, likes: 0, comments: 0, shares: 0, saves: 0 }
+          : null,
+    };
+
+    db.posts.unshift(post);
+    return { ok: true as const, post, issues, erro: null };
+  });
+
 // ---------------------------------------------------------------------------
 // Impulsionamento (PRD 3.4)
 // ---------------------------------------------------------------------------
@@ -707,6 +797,94 @@ export const atualizarInbox = createServerFn({ method: "POST" })
     if (data.status) item.status = data.status;
     if (data.assignedTo !== undefined) item.assignedTo = data.assignedTo;
     return { item };
+  });
+
+// ---------------------------------------------------------------------------
+// Gerenciamento de relacionamento
+// ---------------------------------------------------------------------------
+
+/**
+ * Responde várias interações de uma vez, personalizando o texto por pessoa.
+ *
+ * A checagem de quem pode receber acontece *antes* de qualquer envio: comentário
+ * público sempre pode; mensagem direta só dentro da janela de 24h da rede e em
+ * conta com mensageria aprovada. O que não passa volta como "ignorado", com o
+ * motivo — em vez de virar uma tentativa que a rede recusaria.
+ */
+export const responderEmLote = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      itemIds: z.array(z.string()).min(1).max(200),
+      texto: z.string().min(1),
+      autor: z.string(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const selecionados = db.inbox.filter((item) => data.itemIds.includes(item.id));
+    if (selecionados.length === 0) throw new Error("Nenhuma interação encontrada.");
+
+    const contaPorId = new Map(db.accounts.map((account) => [account.id, account]));
+
+    // Conexão inativa é motivo próprio: não adianta olhar janela nem permissão.
+    const comConexao: InboxItem[] = [];
+    const ignorados: { itemId: string; motivo: string }[] = [];
+    for (const item of selecionados) {
+      const account = contaPorId.get(item.accountId);
+      if (account && account.status !== "ativa") {
+        ignorados.push({
+          itemId: item.id,
+          motivo: `A conexão com ${NETWORKS[account.networkId].label} está ${statusLabel(account.status)}.`,
+        });
+        continue;
+      }
+      comConexao.push(item);
+    }
+
+    const mensageriaPorConta: Record<string, boolean> = {};
+    for (const account of db.accounts) {
+      mensageriaPorConta[account.id] = account.messagingApproved;
+    }
+
+    const separacao = separarEnviaveis(comConexao, { agoraMs: Date.now(), mensageriaPorConta });
+    ignorados.push(...separacao.ignorados);
+
+    const agora = new Date().toISOString();
+    const enviados: { itemId: string; texto: string }[] = [];
+    for (const item of comConexao) {
+      if (!separacao.enviados.includes(item.id)) continue;
+      const texto = aplicarModelo(data.texto, {
+        nome: item.authorName,
+        handle: item.authorHandle,
+      });
+      item.replies.push({ id: nextId("reply"), author: data.autor, text: texto, sentAt: agora });
+      item.status = "respondido";
+      enviados.push({ itemId: item.id, texto });
+    }
+
+    return { enviados, ignorados };
+  });
+
+/**
+ * Ajusta à mão o grau de relação de uma pessoa.
+ *
+ * Vale para todos os itens do mesmo `@handle`: o grau pertence à pessoa, não à
+ * mensagem, e o time que conhece a base sabe mais do que a heurística de
+ * volume de interações.
+ */
+export const classificarPessoa = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      handle: z.string().min(1),
+      relacao: z.enum(["nao_seguidor", "seguidor", "apoiador", "defensor"]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const itens = db.inbox.filter((item) => item.authorHandle === data.handle);
+    if (itens.length === 0) throw new Error("Pessoa não encontrada.");
+    for (const item of itens) item.relacao = data.relacao;
+    return { handle: data.handle, relacao: data.relacao, atualizados: itens.length };
   });
 
 // ---------------------------------------------------------------------------
@@ -1182,6 +1360,14 @@ export const obterPublicacao = createServerFn({ method: "POST" })
       })),
       /** Se a conta é real, os números vêm da rede; se não, são de demonstração. */
       dadosReais: contas.some((conta) => conta.origem === "oauth"),
+      /** A publicação de onde este repost nasceu, quando for o caso. */
+      original: post.republicadoDe
+        ? (db.posts.find((candidate) => candidate.id === post.republicadoDe) ?? null)
+        : null,
+      /** Reposts já criados a partir desta publicação. */
+      reposts: db.posts
+        .filter((candidate) => candidate.republicadoDe === post.id)
+        .sort(sortPostsByRecency),
     };
   });
 

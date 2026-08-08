@@ -18,8 +18,8 @@ semeados — cada um exerce um papel diferente:
 | --- | --- | --- |
 | `ana@ampliacao.com.br` | Administrador | Todos os módulos, incluindo Equipe |
 | `bruno@ampliacao.com.br` | Gestor | Métricas, publicação, impulsionamento, relatórios |
-| `carla@ampliacao.com.br` | Editor | Métricas, publicação e caixa de entrada |
-| `diego@ampliacao.com.br` | Atendimento | Somente a caixa de entrada |
+| `carla@ampliacao.com.br` | Editor | Métricas, publicação e relacionamento |
+| `diego@ampliacao.com.br` | Atendimento | Somente o relacionamento |
 
 ## Mapa de rotas
 
@@ -30,8 +30,9 @@ semeados — cada um exerce um papel diferente:
 | `/social/contas` | 3.1 — conexões OAuth, tokens, permissões |
 | `/social/conta/$accountId` | 3.2 — evolução histórica, orgânico x pago, público |
 | `/social/publicacoes` | 3.3 — editor, calendário e fluxo de aprovação |
+| `/social/publicacao/$postId` | 3.3 — detalhe da publicação, desempenho e republicação |
 | `/social/impulsionamentos` | 3.4 — mídia paga |
-| `/social/caixa` | 3.5 — caixa de entrada unificada |
+| `/social/relacionamento` | 3.5 — comentários e mensagens de todas as redes, com graus de relação e resposta em lote |
 | `/social/relatorios` | 3.6 — geração e compartilhamento |
 | `/social/equipe` | 3.7 — usuários e permissões |
 | `/relatorio/$token` | 3.6 — página pública somente leitura (sem sessão) |
@@ -45,6 +46,8 @@ src/lib/social/networks.ts     capacidades e limites por rede + validação de r
 src/lib/social/analytics.ts    recorte por período, resumo, orgânico x pago, séries
 src/lib/social/format.ts       formatação pt-BR (números, moeda, datas, rótulos)
 src/lib/social/permissions.ts  o que cada papel pode acessar na interface
+src/lib/social/relacionamento.ts  graus de relação, consolidação por pessoa e regra de envio em lote
+src/lib/social/post-analytics.ts  desempenho por publicação (divisão por conta, curva, engajamento)
 src/lib/social/session.tsx     sessão do cliente + seletor de projeto
 src/lib/social/store.server.ts persistência (hoje em memória, semeada de forma determinística)
 src/lib/social/oauth/*         integração oficial com a Meta (OAuth + Graph API)
@@ -73,6 +76,12 @@ Real, e implementado como o produto pede:
 - Isolamento por projeto em todos os módulos e permissões por papel.
 - Preservação do histórico: desconectar uma conta não apaga suas métricas.
 - Relatório público somente leitura, que responde apenas enquanto o link estiver ativo.
+
+**Relacionamento e envio em massa.** A área de relacionamento, os graus (não
+seguidor, seguidor, apoiador, defensor) e a resposta em lote estão documentados
+em [relacionamento.md](./relacionamento.md) — inclusive por que mensagem direta
+para todos os seguidores não é possível em nenhuma rede, e o que funciona no
+lugar disso.
 
 **Conexão real com a Meta** (Instagram e Facebook) está implementada e é ligada por
 variáveis de ambiente — ver [integracao-meta.md](./integracao-meta.md). Sem elas a
@@ -116,7 +125,7 @@ Simulado, porque este ambiente não tem credenciais nem banco:
 4. Autorização por sessão nas funções de servidor: hoje elas confiam no
    `projectId` que o cliente envia.
 5. Fila de jobs para sincronização, publicação agendada e reprocessamento em falha de API.
-6. Webhooks de comentários e mensagens substituindo o polling da caixa de entrada.
+6. Webhooks de comentários e mensagens substituindo o polling do relacionamento.
 7. Retenção e anonimização dos dados de público conforme a LGPD.
 
 Adicionar uma rede nova exige apenas uma entrada em `NETWORKS` (`networks.ts`) com seus limites e
