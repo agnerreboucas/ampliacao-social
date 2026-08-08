@@ -237,6 +237,76 @@ export function SplitDonut({ split, height = 200 }: { split: OrganicPaidSplit; h
   );
 }
 
+/**
+ * Desempenho de uma publicação nos primeiros dias.
+ *
+ * Duas escalas no mesmo gráfico não ajudariam aqui — alcance e interações têm
+ * ordens de grandeza diferentes —, então mostramos o alcance em barras e as
+ * interações no rótulo do tooltip.
+ */
+export function PostPerformanceChart({
+  data,
+  height = 240,
+}: {
+  data: { dia: number; data: string; reach: number; engagement: number }[];
+  height?: number;
+}) {
+  return (
+    <ChartFrame height={height}>
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis
+          dataKey="dia"
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={(dia: number) => (dia === 0 ? "publicou" : `+${dia}d`)}
+        />
+        <YAxis
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={formatCompact}
+          width={52}
+        />
+        <Tooltip
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const ponto = payload[0].payload as {
+              dia: number;
+              reach: number;
+              engagement: number;
+            };
+            return (
+              <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
+                <div className="mb-1 font-medium">
+                  {ponto.dia === 0 ? "Dia da publicação" : `${ponto.dia} dia(s) depois`}
+                </div>
+                <div className="flex items-center gap-2 py-0.5">
+                  <span className="text-muted-foreground">Alcance</span>
+                  <span className="ml-auto font-semibold tabular-nums">
+                    {formatNumber(ponto.reach)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 py-0.5">
+                  <span className="text-muted-foreground">Interações</span>
+                  <span className="ml-auto font-semibold tabular-nums">
+                    {formatNumber(ponto.engagement)}
+                  </span>
+                </div>
+              </div>
+            );
+          }}
+          cursor={{ fill: "oklch(1 0 0 / 4%)" }}
+        />
+        <Bar dataKey="reach" name="Alcance" fill={ORGANIC_COLOR} radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ChartFrame>
+  );
+}
+
 /** Horários de maior atividade do público (PRD 3.2, análise de público). */
 export function ActivityChart({
   data,

@@ -224,22 +224,30 @@ function PainelPage() {
             ) : (
               <ul className="divide-y divide-border">
                 {data.topPosts.map((post) => (
-                  <li key={post.id} className="flex items-center gap-4 py-3">
-                    <span
-                      className="size-11 shrink-0 rounded-lg"
-                      style={{ background: post.coverGradient }}
-                      aria-hidden
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{post.caption}</p>
-                      <p className="mt-0.5 text-xs capitalize text-muted-foreground">
-                        {post.format}
-                      </p>
-                    </div>
-                    <div className="text-right text-sm tabular-nums">
-                      <div className="font-semibold">{formatCompact(post.metrics?.reach ?? 0)}</div>
-                      <div className="text-xs text-muted-foreground">alcance</div>
-                    </div>
+                  <li key={post.id}>
+                    <Link
+                      to="/social/publicacao/$postId"
+                      params={{ postId: post.id }}
+                      className="-mx-2 flex items-center gap-4 rounded-lg px-2 py-3 transition-colors hover:bg-secondary/50"
+                    >
+                      <span
+                        className="size-11 shrink-0 rounded-lg"
+                        style={{ background: post.coverGradient }}
+                        aria-hidden
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm">{post.caption}</p>
+                        <p className="mt-0.5 text-xs capitalize text-muted-foreground">
+                          {post.format}
+                        </p>
+                      </div>
+                      <div className="text-right text-sm tabular-nums">
+                        <div className="font-semibold">
+                          {formatCompact(post.metrics?.reach ?? 0)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">alcance</div>
+                      </div>
+                    </Link>
                   </li>
                 ))}
               </ul>

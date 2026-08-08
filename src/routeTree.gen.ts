@@ -21,6 +21,7 @@ import { Route as SocialContasRouteImport } from './routes/social/contas'
 import { Route as SocialCaixaRouteImport } from './routes/social/caixa'
 import { Route as RelatorioTokenRouteImport } from './routes/relatorio.$token'
 import { Route as OauthRetornoRouteImport } from './routes/oauth.retorno'
+import { Route as SocialPublicacaoPostIdRouteImport } from './routes/social/publicacao.$postId'
 import { Route as SocialContaAccountIdRouteImport } from './routes/social/conta.$accountId'
 
 const SocialRoute = SocialRouteImport.update({
@@ -83,6 +84,11 @@ const OauthRetornoRoute = OauthRetornoRouteImport.update({
   path: '/oauth/retorno',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SocialPublicacaoPostIdRoute = SocialPublicacaoPostIdRouteImport.update({
+  id: '/publicacao/$postId',
+  path: '/publicacao/$postId',
+  getParentRoute: () => SocialRoute,
+} as any)
 const SocialContaAccountIdRoute = SocialContaAccountIdRouteImport.update({
   id: '/conta/$accountId',
   path: '/conta/$accountId',
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/social/entrar': typeof SocialEntrarRoute
   '/social/': typeof SocialIndexRoute
   '/social/conta/$accountId': typeof SocialContaAccountIdRoute
+  '/social/publicacao/$postId': typeof SocialPublicacaoPostIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -117,6 +124,7 @@ export interface FileRoutesByTo {
   '/social/entrar': typeof SocialEntrarRoute
   '/social': typeof SocialIndexRoute
   '/social/conta/$accountId': typeof SocialContaAccountIdRoute
+  '/social/publicacao/$postId': typeof SocialPublicacaoPostIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -133,6 +141,7 @@ export interface FileRoutesById {
   '/social_/entrar': typeof SocialEntrarRoute
   '/social/': typeof SocialIndexRoute
   '/social/conta/$accountId': typeof SocialContaAccountIdRoute
+  '/social/publicacao/$postId': typeof SocialPublicacaoPostIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -150,6 +159,7 @@ export interface FileRouteTypes {
     | '/social/entrar'
     | '/social/'
     | '/social/conta/$accountId'
+    | '/social/publicacao/$postId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -164,6 +174,7 @@ export interface FileRouteTypes {
     | '/social/entrar'
     | '/social'
     | '/social/conta/$accountId'
+    | '/social/publicacao/$postId'
   id:
     | '__root__'
     | '/'
@@ -179,6 +190,7 @@ export interface FileRouteTypes {
     | '/social_/entrar'
     | '/social/'
     | '/social/conta/$accountId'
+    | '/social/publicacao/$postId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -275,6 +287,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OauthRetornoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/social/publicacao/$postId': {
+      id: '/social/publicacao/$postId'
+      path: '/publicacao/$postId'
+      fullPath: '/social/publicacao/$postId'
+      preLoaderRoute: typeof SocialPublicacaoPostIdRouteImport
+      parentRoute: typeof SocialRoute
+    }
     '/social/conta/$accountId': {
       id: '/social/conta/$accountId'
       path: '/conta/$accountId'
@@ -294,6 +313,7 @@ interface SocialRouteChildren {
   SocialRelatoriosRoute: typeof SocialRelatoriosRoute
   SocialIndexRoute: typeof SocialIndexRoute
   SocialContaAccountIdRoute: typeof SocialContaAccountIdRoute
+  SocialPublicacaoPostIdRoute: typeof SocialPublicacaoPostIdRoute
 }
 
 const SocialRouteChildren: SocialRouteChildren = {
@@ -305,6 +325,7 @@ const SocialRouteChildren: SocialRouteChildren = {
   SocialRelatoriosRoute: SocialRelatoriosRoute,
   SocialIndexRoute: SocialIndexRoute,
   SocialContaAccountIdRoute: SocialContaAccountIdRoute,
+  SocialPublicacaoPostIdRoute: SocialPublicacaoPostIdRoute,
 }
 
 const SocialRouteWithChildren =

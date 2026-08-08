@@ -299,23 +299,29 @@ function ContaPage() {
           ) : (
             <ul className="divide-y divide-border">
               {posts.map((post) => (
-                <li key={post.id} className="flex items-center gap-3 py-3">
-                  <span
-                    className="size-10 shrink-0 rounded-lg"
-                    style={{ background: post.coverGradient }}
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{post.caption}</p>
-                    <p className="text-xs capitalize text-muted-foreground">
-                      {post.format} · {post.status.replace("_", " ")}
-                    </p>
-                  </div>
-                  {post.metrics ? (
-                    <span className="text-sm tabular-nums">
-                      {formatCompact(post.metrics.reach)}
-                    </span>
-                  ) : null}
+                <li key={post.id}>
+                  <Link
+                    to="/social/publicacao/$postId"
+                    params={{ postId: post.id }}
+                    className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-secondary/50"
+                  >
+                    <span
+                      className="size-10 shrink-0 rounded-lg"
+                      style={{ background: post.coverGradient }}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{post.caption}</p>
+                      <p className="text-xs capitalize text-muted-foreground">
+                        {post.format} · {post.status.replace("_", " ")}
+                      </p>
+                    </div>
+                    {post.metrics ? (
+                      <span className="text-sm tabular-nums">
+                        {formatCompact(post.metrics.reach)}
+                      </span>
+                    ) : null}
+                  </Link>
                 </li>
               ))}
             </ul>

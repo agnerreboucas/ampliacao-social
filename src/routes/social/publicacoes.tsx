@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   CalendarDays,
   CheckCircle2,
@@ -212,15 +212,24 @@ function PostRow({
   return (
     <li className="rounded-xl border border-border p-4">
       <div className="flex flex-wrap items-start gap-4">
-        <span
-          className="grid size-12 shrink-0 place-items-center rounded-lg text-white"
+        <Link
+          to="/social/publicacao/$postId"
+          params={{ postId: post.id }}
+          className="grid size-12 shrink-0 place-items-center rounded-lg text-white transition-opacity hover:opacity-80"
           style={{ background: post.coverGradient }}
+          aria-label="Abrir detalhe da publicação"
         >
           <Icon className="size-5" />
-        </span>
+        </Link>
 
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-sm">{post.caption || "Sem legenda"}</p>
+          <Link
+            to="/social/publicacao/$postId"
+            params={{ postId: post.id }}
+            className="line-clamp-2 text-sm hover:text-accent"
+          >
+            {post.caption || "Sem legenda"}
+          </Link>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <StatusPill tone={STATUS_TONES[post.status]}>
               {POST_STATUS_LABELS[post.status]}

@@ -22,6 +22,13 @@ import {
   lerDescoberta,
 } from "@/lib/social/credenciais.server";
 import { NETWORKS, hasBlockingIssues, validateDraft } from "@/lib/social/networks";
+import {
+  curvaDoPost,
+  dividirPorConta,
+  itensDaMidia,
+  taxaDeEngajamento,
+  totalDeInteracoes,
+} from "@/lib/social/post-analytics";
 import { montarEscopos, montarUrlAutorizacao, type GrupoEscopo } from "@/lib/social/oauth/meta";
 import {
   buscarInsights,
@@ -1107,4 +1114,71 @@ export const desconectarContaReal = createServerFn({ method: "POST" })
     account.status = "desconectada";
     account.tokenExpiresAt = null;
     return { ok: true as const, account };
+  });
+
+/**
+ * Detalhe de uma publicação: a mídia, o resultado por conta, a curva dos
+ * primeiros dias, os impulsionamentos e as interações que ela gerou.
+ *
+ * Reúne num só lugar o que hoje está espalhado entre listas — é a tela para
+ * responder "por que este post foi bem?" sem trocar de aba.
+ */
+export const obterPublicacao = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ postId: z.string() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const post = db.posts.find((candidate) => candidate.id === data.postId);
+    if (!post) return { ok: false as const };
+
+    const contas = db.accounts.filter((account) => post.accountIds.includes(account.id));
+    const autor = db.users.find((user) => user.id === post.createdBy) ?? null;
+    const aprovador = post.approvedBy
+      ? (db.users.find((user) => user.id === post.approvedBy) ?? null)
+      : null;
+
+    const porConta = dividirPorConta(post);
+
+    // Linha do tempo do post: o que aconteceu, em ordem.
+    const etapas: { rotulo: string; quando: string | null; concluida: boolean }[] = [
+      { rotulo: "Criado", quando: null, concluida: true },
+      {
+        rotulo: post.requiresApproval ? "Aprovado" : "Aprovação dispensada",
+        quando: null,
+        concluida: post.approvedBy !== null || !post.requiresApproval,
+      },
+      {
+        rotulo: post.scheduledFor ? "Agendado" : "Sem agendamento",
+        quando: post.scheduledFor,
+        concluida: Boolean(post.scheduledFor),
+      },
+      { rotulo: "Publicado", quando: post.publishedAt, concluida: post.status === "publicado" },
+    ];
+
+    const boosts = db.boosts.filter((boost) => boost.postId === post.id);
+
+    return {
+      ok: true as const,
+      post,
+      contas,
+      autor,
+      aprovador,
+      itensMidia: itensDaMidia(post),
+      porConta,
+      curva: curvaDoPost(post, 10),
+      interacoes: post.metrics ? totalDeInteracoes(post.metrics) : 0,
+      taxaEngajamento: post.metrics ? taxaDeEngajamento(post.metrics) : 0,
+      etapas,
+      boosts,
+      /** Comentários e mensagens que citam esta publicação (PRD 3.5). */
+      inbox: db.inbox
+        .filter((item) => item.postId === post.id)
+        .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)),
+      capacidades: contas.map((conta) => ({
+        accountId: conta.id,
+        rede: NETWORKS[conta.networkId].label,
+        limiteLegenda: NETWORKS[conta.networkId].captionMaxLength,
+      })),
+      /** Se a conta é real, os números vêm da rede; se não, são de demonstração. */
+      dadosReais: contas.some((conta) => conta.origem === "oauth"),
+    };
   });
