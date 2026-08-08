@@ -23,6 +23,16 @@ import {
 } from "@/lib/social/credenciais.server";
 import { NETWORKS, hasBlockingIssues, statusLabel, validateDraft } from "@/lib/social/networks";
 import { aplicarModelo, separarEnviaveis } from "@/lib/social/relacionamento";
+import {
+  VALORES_ZERADOS,
+  aplicarValores,
+  atualizacoesDoDia,
+  progressoDoDia,
+  valoresDe,
+  variacaoEntre,
+} from "@/lib/social/atualizacao";
+import { desserializar, nomeDoArquivo, serializar } from "@/lib/social/snapshot";
+import { caminhoDoArquivo } from "@/lib/social/snapshot.server";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
 import { CONECTORES_SOCIAIS } from "@/lib/social/windsor/windsor";
 import {
@@ -45,11 +55,14 @@ import {
   getDb,
   mesclarMetricas,
   nextId,
+  persistir,
   releaseIncoming,
   sortPostsByRecency,
+  substituirEstado,
   toDayKey,
 } from "@/lib/social/store.server";
 import type {
+  AtualizacaoManual,
   Boost,
   InboxItem,
   NetworkId,
@@ -1490,4 +1503,253 @@ export const sincronizarPagoWindsor = createServerFn({ method: "POST" })
       console.error(`Falha ao sincronizar ${account.id} pelo Windsor:`, erro);
       return { ok: false as const, erro: explicarErroWindsor(erro) };
     }
+  });
+
+// ---------------------------------------------------------------------------
+// Atualização manual dos números
+// ---------------------------------------------------------------------------
+
+const valoresSchema = z.object({
+  followers: z.number().int().min(0),
+  organicReach: z.number().int().min(0),
+  paidReach: z.number().int().min(0),
+  organicImpressions: z.number().int().min(0),
+  paidImpressions: z.number().int().min(0),
+  organicEngagement: z.number().int().min(0),
+  paidEngagement: z.number().int().min(0),
+  adSpend: z.number().min(0),
+});
+
+/**
+ * O que a tela de atualização precisa saber: contas do projeto, o que já foi
+ * registrado hoje e onde os dados estão guardados.
+ */
+export const situacaoAtualizacao = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string().optional(), date: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = accountsOfProject(data.projectId);
+    const hoje = data.date ?? toDayKey(new Date());
+
+    const porConta = contas.map((conta) => {
+      const registros = atualizacoesDoDia(db.atualizacoes, conta.id, hoje);
+      const serie = db.metrics.get(conta.id) ?? [];
+      const doDia = serie.find((dia) => dia.date === hoje);
+      const ultimoDiaAnterior = serie.filter((dia) => dia.date < hoje).at(-1);
+
+      return {
+        accountId: conta.id,
+        registros,
+        progresso: progressoDoDia(registros),
+        // Pré-preenche com o que já existe: quem atualiza três vezes por dia só
+        // deve digitar o que mudou desde a leitura anterior.
+        valores: doDia
+          ? valoresDe(doDia)
+          : ultimoDiaAnterior
+            ? valoresDe(ultimoDiaAnterior)
+            : VALORES_ZERADOS,
+        temDoDia: Boolean(doDia),
+      };
+    });
+
+    return {
+      contas,
+      date: hoje,
+      porConta,
+      arquivo: caminhoDoArquivo(),
+      totalRegistros: db.atualizacoes.length,
+    };
+  });
+
+/**
+ * Registra uma leitura manual.
+ *
+ * Grava o arquivo em seguida, porque a alternativa é o usuário digitar quinze
+ * campos, fechar o navegador e perder tudo — o passo que ele esqueceria é
+ * justamente o que não pode depender dele.
+ */
+export const registrarAtualizacao = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      accountId: z.string(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use uma data no formato AAAA-MM-DD."),
+      autor: z.string(),
+      valores: valoresSchema,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const conta = db.accounts.find((candidate) => candidate.id === data.accountId);
+    if (!conta) throw new Error("Conta não encontrada.");
+
+    const anteriores = atualizacoesDoDia(db.atualizacoes, data.accountId, data.date);
+    const anterior = anteriores.at(-1);
+
+    const registro: AtualizacaoManual = {
+      id: nextId("atual"),
+      accountId: data.accountId,
+      date: data.date,
+      registradaEm: new Date().toISOString(),
+      autor: data.autor,
+      valores: data.valores,
+    };
+
+    db.atualizacoes.push(registro);
+    db.metrics.set(
+      data.accountId,
+      aplicarValores(db.metrics.get(data.accountId) ?? [], data.date, data.valores),
+    );
+    conta.lastSyncAt = registro.registradaEm;
+
+    const gravacao = persistir();
+
+    return {
+      registro,
+      // O que mudou desde a leitura anterior do mesmo dia — é o que dá sentido
+      // a atualizar mais de uma vez.
+      variacoes: anterior ? variacaoEntre(anterior.valores, data.valores) : [],
+      progresso: progressoDoDia([...anteriores, registro]),
+      gravacao,
+    };
+  });
+
+/** Devolve o arquivo inteiro para download — o que vai para o commit. */
+export const exportarDados = createServerFn({ method: "POST" }).handler(async () => {
+  const db = getDb();
+  return { conteudo: serializar(db), nome: nomeDoArquivo() };
+});
+
+/** Carrega um arquivo enviado pela tela, substituindo o estado atual. */
+export const importarDados = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ conteudo: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    try {
+      const estado = desserializar(data.conteudo);
+      substituirEstado(estado);
+      const gravacao = persistir();
+      return {
+        ok: true as const,
+        contas: estado.accounts.length,
+        atualizacoes: estado.atualizacoes.length,
+        gravacao,
+      };
+    } catch (erro) {
+      return {
+        ok: false as const,
+        erro: erro instanceof Error ? erro.message : "Não foi possível ler o arquivo.",
+      };
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// Detalhamento de um dia (ou de um grupo de dias) por canal
+// ---------------------------------------------------------------------------
+
+/**
+ * Abre um ponto do gráfico: o que cada canal fez naquele intervalo.
+ *
+ * O gráfico agrupa dias quando o período é longo, então a entrada é um
+ * intervalo, não um dia. Com `inicio === fim` o resultado é o dia exato; com
+ * uma faixa, cada canal vem somado dentro dela — que é o que a barra clicada
+ * de fato representa.
+ */
+export const detalharPeriodo = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      projectId: z.string().optional(),
+      inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = accountsOfProject(data.projectId);
+    const [inicio, fim] =
+      data.inicio <= data.fim ? [data.inicio, data.fim] : [data.fim, data.inicio];
+    const dentro = (date: string) => date >= inicio && date <= fim;
+
+    const canais = contas
+      .map((conta) => {
+        const dias = (db.metrics.get(conta.id) ?? []).filter((dia) => dentro(dia.date));
+        const soma = dias.reduce(
+          (acumulado, dia) => ({
+            organicReach: acumulado.organicReach + dia.organicReach,
+            paidReach: acumulado.paidReach + dia.paidReach,
+            organicImpressions: acumulado.organicImpressions + dia.organicImpressions,
+            paidImpressions: acumulado.paidImpressions + dia.paidImpressions,
+            organicEngagement: acumulado.organicEngagement + dia.organicEngagement,
+            paidEngagement: acumulado.paidEngagement + dia.paidEngagement,
+            adSpend: acumulado.adSpend + dia.adSpend,
+            followersGained: acumulado.followersGained + dia.followersGained,
+            followersLost: acumulado.followersLost + dia.followersLost,
+          }),
+          {
+            organicReach: 0,
+            paidReach: 0,
+            organicImpressions: 0,
+            paidImpressions: 0,
+            organicEngagement: 0,
+            paidEngagement: 0,
+            adSpend: 0,
+            followersGained: 0,
+            followersLost: 0,
+          },
+        );
+
+        const ultimo = dias.at(-1);
+        const alcance = soma.organicReach + soma.paidReach;
+        const engajamento = soma.organicEngagement + soma.paidEngagement;
+
+        return {
+          conta,
+          /** Sem linha no intervalo, o canal aparece como "sem dado" em vez de zerado. */
+          temDado: dias.length > 0,
+          dias,
+          soma: { ...soma, adSpend: Math.round(soma.adSpend * 100) / 100 },
+          alcance,
+          engajamento,
+          /** Seguidores no fim do intervalo — é um estoque, não se soma. */
+          followers: ultimo?.followers ?? null,
+          taxaEngajamento: alcance > 0 ? engajamento / alcance : 0,
+          publicacoes: db.posts
+            .filter(
+              (post) =>
+                post.accountIds.includes(conta.id) &&
+                post.publishedAt !== null &&
+                dentro(post.publishedAt.slice(0, 10)),
+            )
+            .sort(sortPostsByRecency),
+          impulsionamentos: db.boosts.filter(
+            (boost) =>
+              boost.accountId === conta.id && boost.startedAt <= fim && boost.endsAt >= inicio,
+          ),
+          interacoes: db.inbox.filter(
+            (item) => item.accountId === conta.id && dentro(item.receivedAt.slice(0, 10)),
+          ).length,
+          /** Leituras manuais do intervalo — mostra de onde vieram os números. */
+          leituras: db.atualizacoes
+            .filter((registro) => registro.accountId === conta.id && dentro(registro.date))
+            .sort((a, b) => a.registradaEm.localeCompare(b.registradaEm)),
+        };
+      })
+      .sort((a, b) => b.alcance - a.alcance);
+
+    const totais = canais.reduce(
+      (acumulado, canal) => ({
+        alcance: acumulado.alcance + canal.alcance,
+        organico: acumulado.organico + canal.soma.organicReach,
+        pago: acumulado.pago + canal.soma.paidReach,
+        engajamento: acumulado.engajamento + canal.engajamento,
+        investido: acumulado.investido + canal.soma.adSpend,
+        publicacoes: acumulado.publicacoes + canal.publicacoes.length,
+      }),
+      { alcance: 0, organico: 0, pago: 0, engajamento: 0, investido: 0, publicacoes: 0 },
+    );
+
+    return {
+      inicio,
+      fim,
+      canais,
+      totais: { ...totais, investido: Math.round(totais.investido * 100) / 100 },
+    };
   });

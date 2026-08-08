@@ -54,6 +54,42 @@ export type DailyMetric = {
   adSpend: number; // BRL
 };
 
+/**
+ * Os números que uma pessoa digita quando a atualização é manual.
+ *
+ * São os mesmos campos de `DailyMetric`, menos os que a plataforma consegue
+ * derivar sozinha (`followersGained` e `followersLost` saem da diferença para o
+ * dia anterior — ninguém lê isso de cabeça no painel da rede).
+ */
+export type ValoresManuais = {
+  followers: number;
+  organicReach: number;
+  paidReach: number;
+  organicImpressions: number;
+  paidImpressions: number;
+  organicEngagement: number;
+  paidEngagement: number;
+  adSpend: number;
+};
+
+/**
+ * Um registro manual de números.
+ *
+ * Vários registros podem apontar para o mesmo `date`: atualizar três vezes no
+ * mesmo dia gera três registros, e o mais recente é o que vale para o histórico.
+ * Guardar todos permite mostrar o que mudou entre uma atualização e a seguinte.
+ */
+export type AtualizacaoManual = {
+  id: string;
+  accountId: string;
+  /** Dia a que os números se referem. */
+  date: string; // YYYY-MM-DD
+  /** Quando o registro foi feito — é isto que distingue as três do dia. */
+  registradaEm: string; // ISO datetime
+  autor: string;
+  valores: ValoresManuais;
+};
+
 export type PeriodKey = "7d" | "30d" | "90d" | "12m" | "tudo";
 
 export type MetricSummary = {

@@ -8,6 +8,7 @@ import {
   Link2,
   LogOut,
   MessagesSquare,
+  PencilLine,
   Rocket,
   Send,
   Users,
@@ -85,6 +86,7 @@ function SocialShell() {
   const items: NavItem[] = [
     { to: "/social", label: "Painel", icon: LayoutDashboard, ability: "metricas" },
     { to: "/social/contas", label: "Contas", icon: Link2, ability: "metricas" },
+    { to: "/social/atualizar", label: "Atualizar números", icon: PencilLine, ability: "metricas" },
     { to: "/social/publicacoes", label: "Publicações", icon: Send, ability: "publicar" },
     { to: "/social/impulsionamentos", label: "Impulsionar", icon: Rocket, ability: "impulsionar" },
     {

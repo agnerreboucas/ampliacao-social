@@ -4,16 +4,21 @@ import {
   ArrowRight,
   BadgeDollarSign,
   CalendarClock,
+  ChevronDown,
+  Eye,
   Heart,
+  LoaderCircle,
   MessagesSquare,
+  MousePointerClick,
   Rocket,
   Sparkles,
   TrendingUp,
   Users,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 
-import { obterPainel } from "@/lib/api/social.functions";
+import { detalharPeriodo, obterPainel } from "@/lib/api/social.functions";
 import { GrowthChart, ReachChart, SplitDonut } from "@/components/social/charts";
 import {
   AccountAvatar,
@@ -30,11 +35,14 @@ import {
   PERIOD_LABELS,
   formatCompact,
   formatCurrency,
+  formatLongDay,
   formatNumber,
   formatPercent,
 } from "@/lib/social/format";
 import { useSocialSession } from "@/lib/social/session";
+import type { SeriesPoint } from "@/lib/social/analytics";
 import type { PeriodKey } from "@/lib/social/types";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/social/")({
   component: PainelPage,
@@ -43,6 +51,7 @@ export const Route = createFileRoute("/social/")({
 function PainelPage() {
   const { projectId, session } = useSocialSession();
   const [period, setPeriod] = useState<PeriodKey>("30d");
+  const [pontoAberto, setPontoAberto] = useState<SeriesPoint | null>(null);
 
   const painel = useQuery({
     queryKey: ["social", "painel", projectId, period],
@@ -147,11 +156,29 @@ function PainelPage() {
 
           <SectionCard
             title="Alcance por origem"
-            description="Barras empilhadas: quanto veio do orgânico e quanto veio de mídia paga."
+            description="Barras empilhadas: quanto veio do orgânico e quanto veio de mídia paga. Clique em um dia para abrir o detalhamento por canal."
             icon={TrendingUp}
+            actions={
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <MousePointerClick className="size-3.5" />
+                clique em uma barra
+              </span>
+            }
           >
-            <ReachChart data={data.series} />
+            <ReachChart
+              data={data.series}
+              onSelecionarDia={setPontoAberto}
+              diaSelecionado={pontoAberto?.date ?? null}
+            />
           </SectionCard>
+
+          {pontoAberto ? (
+            <DetalhamentoDoDia
+              ponto={pontoAberto}
+              projectId={projectId}
+              onFechar={() => setPontoAberto(null)}
+            />
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-3">
             <QuickTile
@@ -317,5 +344,254 @@ function QuickTile({
       </div>
       <ArrowRight className="ml-auto size-4 text-muted-foreground" />
     </Link>
+  );
+}
+
+/**
+ * O que aconteceu no dia que o usuário clicou, canal por canal.
+ *
+ * Duas camadas de profundidade, porque é assim que a pergunta costuma vir: "o
+ * que houve nesse dia?" e, logo em seguida, "o que houve nesse dia *no
+ * Instagram*?". A primeira camada compara os canais entre si; a segunda abre um
+ * canal e mostra tudo que ele registrou — inclusive de onde os números vieram.
+ */
+function DetalhamentoDoDia({
+  ponto,
+  projectId,
+  onFechar,
+}: {
+  ponto: SeriesPoint;
+  projectId: string | null;
+  onFechar: () => void;
+}) {
+  const [canalAberto, setCanalAberto] = useState<string | null>(null);
+
+  const detalhe = useQuery({
+    queryKey: ["social", "detalhe", projectId, ponto.inicio, ponto.date],
+    queryFn: () =>
+      detalharPeriodo({
+        data: { projectId: projectId ?? undefined, inicio: ponto.inicio, fim: ponto.date },
+      }),
+    enabled: Boolean(projectId),
+  });
+
+  const agrupado = ponto.dias > 1;
+  const titulo = agrupado
+    ? `${formatLongDay(ponto.inicio)} a ${formatLongDay(ponto.date)}`
+    : formatLongDay(ponto.date);
+
+  return (
+    <SectionCard
+      title={agrupado ? `Detalhamento de ${ponto.dias} dias` : "Detalhamento do dia"}
+      description={
+        agrupado
+          ? `${titulo} — esta barra agrupa ${ponto.dias} dias, e os números abaixo somam o período inteiro.`
+          : titulo
+      }
+      icon={Eye}
+      actions={
+        <button
+          type="button"
+          onClick={onFechar}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-secondary"
+        >
+          <X className="size-3.5" />
+          Fechar
+        </button>
+      }
+    >
+      {detalhe.isPending ? (
+        <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin" />
+          Abrindo o dia…
+        </div>
+      ) : !detalhe.data ? (
+        <p className="py-4 text-sm text-muted-foreground">Não foi possível abrir este dia.</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ResumoDoDia rotulo="Alcance total" valor={formatNumber(detalhe.data.totais.alcance)} />
+            <ResumoDoDia
+              rotulo="Orgânico x pago"
+              valor={`${formatCompact(detalhe.data.totais.organico)} · ${formatCompact(detalhe.data.totais.pago)}`}
+            />
+            <ResumoDoDia
+              rotulo="Engajamento"
+              valor={formatNumber(detalhe.data.totais.engajamento)}
+            />
+            <ResumoDoDia rotulo="Investido" valor={formatCurrency(detalhe.data.totais.investido)} />
+          </div>
+
+          <ul className="space-y-2">
+            {detalhe.data.canais.map((canal) => {
+              const aberto = canalAberto === canal.conta.id;
+              const participacao =
+                detalhe.data.totais.alcance > 0 ? canal.alcance / detalhe.data.totais.alcance : 0;
+
+              return (
+                <li
+                  key={canal.conta.id}
+                  className="overflow-hidden rounded-xl border border-border"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setCanalAberto(aberto ? null : canal.conta.id)}
+                    className="flex w-full min-w-0 flex-wrap items-center gap-3 p-3 text-left transition-colors hover:bg-secondary/50"
+                  >
+                    <AccountAvatar
+                      gradient={canal.conta.avatarGradient}
+                      label={canal.conta.displayName}
+                      size={34}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {canal.conta.displayName}
+                        </span>
+                        <NetworkChip networkId={canal.conta.networkId} />
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{canal.conta.handle}</p>
+                    </div>
+
+                    {canal.temDado ? (
+                      <div className="flex shrink-0 items-center gap-4 text-right">
+                        <div>
+                          <div className="text-sm font-semibold tabular-nums">
+                            {formatNumber(canal.alcance)}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {formatPercent(participacao)} do alcance
+                          </div>
+                        </div>
+                        <ChevronDown
+                          className={cn(
+                            "size-4 text-muted-foreground transition-transform",
+                            aberto && "rotate-180",
+                          )}
+                        />
+                      </div>
+                    ) : (
+                      <StatusPill tone="neutro">sem dado neste dia</StatusPill>
+                    )}
+                  </button>
+
+                  {aberto && canal.temDado ? <DetalheDoCanal canal={canal} /> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function ResumoDoDia({ rotulo, valor }: { rotulo: string; valor: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-border p-3">
+      <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{rotulo}</div>
+      <div className="mt-1 truncate text-lg font-semibold tabular-nums">{valor}</div>
+    </div>
+  );
+}
+
+type CanalDetalhado = Awaited<ReturnType<typeof detalharPeriodo>>["canais"][number];
+
+function DetalheDoCanal({ canal }: { canal: CanalDetalhado }) {
+  const linhas: { rotulo: string; valor: string }[] = [
+    { rotulo: "Alcance orgânico", valor: formatNumber(canal.soma.organicReach) },
+    { rotulo: "Alcance pago", valor: formatNumber(canal.soma.paidReach) },
+    { rotulo: "Impressões orgânicas", valor: formatNumber(canal.soma.organicImpressions) },
+    { rotulo: "Impressões pagas", valor: formatNumber(canal.soma.paidImpressions) },
+    { rotulo: "Engajamento orgânico", valor: formatNumber(canal.soma.organicEngagement) },
+    { rotulo: "Engajamento pago", valor: formatNumber(canal.soma.paidEngagement) },
+    { rotulo: "Taxa de engajamento", valor: formatPercent(canal.taxaEngajamento) },
+    { rotulo: "Seguidores ganhos", valor: formatNumber(canal.soma.followersGained) },
+    { rotulo: "Seguidores perdidos", valor: formatNumber(canal.soma.followersLost) },
+    {
+      rotulo: "Seguidores no fim do dia",
+      valor: canal.followers === null ? "—" : formatNumber(canal.followers),
+    },
+    { rotulo: "Investido", valor: formatCurrency(canal.soma.adSpend) },
+    { rotulo: "Interações recebidas", valor: formatNumber(canal.interacoes) },
+  ];
+
+  return (
+    <div className="space-y-4 border-t border-border bg-secondary/20 p-4">
+      <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
+        {linhas.map((linha) => (
+          <div
+            key={linha.rotulo}
+            className="flex min-w-0 items-baseline justify-between gap-3 border-b border-border/60 pb-1"
+          >
+            <dt className="truncate text-xs text-muted-foreground">{linha.rotulo}</dt>
+            <dd className="shrink-0 text-sm font-medium tabular-nums">{linha.valor}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {canal.publicacoes.length > 0 ? (
+        <section>
+          <h4 className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            Publicado neste período
+          </h4>
+          <ul className="mt-2 space-y-1.5">
+            {canal.publicacoes.map((post) => (
+              <li key={post.id}>
+                <Link
+                  to="/social/publicacao/$postId"
+                  params={{ postId: post.id }}
+                  className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-card/40 p-2.5 transition-colors hover:bg-secondary/60"
+                >
+                  <span
+                    aria-hidden
+                    className="size-8 shrink-0 rounded-md"
+                    style={{ background: post.coverGradient }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-xs">
+                    {post.caption || "Sem legenda"}
+                  </span>
+                  {post.metrics ? (
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {formatCompact(post.metrics.reach)} alcance
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {canal.leituras.length > 0 ? (
+        <section>
+          <h4 className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            De onde vieram estes números
+          </h4>
+          <ul className="mt-2 space-y-1">
+            {canal.leituras.map((leitura) => (
+              <li key={leitura.id} className="text-[11px] text-muted-foreground">
+                Leitura manual de {leitura.autor} em{" "}
+                {new Date(leitura.registradaEm).toLocaleString("pt-BR", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <Link
+        to="/social/conta/$accountId"
+        params={{ accountId: canal.conta.id }}
+        className="inline-flex items-center gap-1.5 text-xs text-accent hover:underline"
+      >
+        Ver o histórico completo deste canal
+        <ArrowRight className="size-3.5" />
+      </Link>
+    </div>
   );
 }

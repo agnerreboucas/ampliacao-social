@@ -86,6 +86,16 @@ export function splitOrganicPaid(metrics: DailyMetric[]): OrganicPaidSplit {
 
 export type SeriesPoint = {
   date: string;
+  /**
+   * Primeiro dia representado pelo ponto.
+   *
+   * Em períodos longos um ponto agrupa vários dias; sem saber onde o grupo
+   * começa, clicar no gráfico abriria o detalhamento de um dia só — justamente
+   * o que a barra *não* representa.
+   */
+  inicio: string;
+  /** Quantos dias o ponto agrupa. 1 na maioria dos períodos. */
+  dias: number;
   followers: number;
   organicReach: number;
   paidReach: number;
@@ -108,6 +118,8 @@ export function buildSeries(metrics: DailyMetric[], maxPoints = 90): SeriesPoint
     const last = bucket[bucket.length - 1];
     points.push({
       date: last.date,
+      inicio: bucket[0].date,
+      dias: bucket.length,
       followers: last.followers,
       organicReach: sum(bucket, "organicReach"),
       paidReach: sum(bucket, "paidReach"),

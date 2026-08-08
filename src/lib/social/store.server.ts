@@ -1,6 +1,8 @@
 import { NETWORKS } from "./networks";
 import { classificarPorInteracoes } from "./relacionamento";
+import { carregarSnapshot, gravarSnapshot } from "./snapshot.server";
 import type {
+  AtualizacaoManual,
   AudienceInsight,
   Boost,
   DailyMetric,
@@ -34,6 +36,8 @@ export type SocialDatabase = {
   boosts: Boost[];
   inbox: InboxItem[];
   reports: Report[];
+  /** Registros de atualização manual, incluindo os vários do mesmo dia. */
+  atualizacoes: AtualizacaoManual[];
   /** Fila de interações que ainda vão "chegar" — alimenta o tempo real da inbox. */
   incomingQueue: InboxItem[];
   lastIncomingAt: number;
@@ -810,6 +814,7 @@ function createDatabase(): SocialDatabase {
     boosts: buildBoosts(posts, today),
     inbox: buildInbox(now),
     reports: buildReports(today),
+    atualizacoes: [],
     incomingQueue: INCOMING_SEED.map((item, index) => ({
       ...item,
       id: `inbox-live-${index + 1}`,
@@ -825,9 +830,59 @@ const globalStore = globalThis as typeof globalThis & { __socialDb?: SocialDatab
 
 export function getDb(): SocialDatabase {
   if (!globalStore.__socialDb) {
-    globalStore.__socialDb = createDatabase();
+    globalStore.__socialDb = criarOuRestaurar();
   }
   return globalStore.__socialDb;
+}
+
+/**
+ * Restaura o estado gravado em disco; se não houver, recomeça da semente.
+ *
+ * O que veio do arquivo vence a semente por completo — carregar metade de cada
+ * lado produziria uma base que não corresponde a nada que alguém digitou.
+ */
+function criarOuRestaurar(): SocialDatabase {
+  const salvo = carregarSnapshot();
+  const base = createDatabase();
+  if (!salvo) return base;
+
+  return {
+    ...base,
+    projects: salvo.projects.length > 0 ? salvo.projects : base.projects,
+    users: salvo.users.length > 0 ? salvo.users : base.users,
+    accounts: salvo.accounts,
+    metrics: salvo.metrics,
+    audience: salvo.audience.size > 0 ? salvo.audience : base.audience,
+    posts: salvo.posts,
+    boosts: salvo.boosts,
+    inbox: salvo.inbox,
+    reports: salvo.reports,
+    atualizacoes: salvo.atualizacoes,
+  };
+}
+
+/** Grava o estado atual no arquivo que vai para o Git. */
+export function persistir(): { gravado: boolean; caminho: string | null } {
+  return gravarSnapshot(getDb());
+}
+
+/** Substitui o estado inteiro — usado ao carregar um arquivo enviado pela tela. */
+export function substituirEstado(estado: ReturnType<typeof carregarSnapshot>): void {
+  if (!estado) return;
+  const base = getDb();
+  globalStore.__socialDb = {
+    ...base,
+    projects: estado.projects.length > 0 ? estado.projects : base.projects,
+    users: estado.users.length > 0 ? estado.users : base.users,
+    accounts: estado.accounts,
+    metrics: estado.metrics,
+    audience: estado.audience.size > 0 ? estado.audience : base.audience,
+    posts: estado.posts,
+    boosts: estado.boosts,
+    inbox: estado.inbox,
+    reports: estado.reports,
+    atualizacoes: estado.atualizacoes,
+  };
 }
 
 /** Libera a próxima interação da fila quando o intervalo já passou. */

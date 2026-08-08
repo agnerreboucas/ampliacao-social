@@ -116,10 +116,40 @@ export function GrowthChart({ data, height = 260 }: { data: SeriesPoint[]; heigh
 }
 
 /** Alcance orgânico x pago no tempo (PRD 3.2, comparativo). */
-export function ReachChart({ data, height = 260 }: { data: SeriesPoint[]; height?: number }) {
+/**
+ * Alcance por dia, empilhando orgânico e pago.
+ *
+ * Com `onSelecionarDia` as barras viram porta de entrada: clicar abre o
+ * detalhamento daquele dia por canal. A barra escolhida fica destacada e as
+ * outras esmaecem, para não restar dúvida sobre qual dia está aberto.
+ */
+export function ReachChart({
+  data,
+  height = 260,
+  onSelecionarDia,
+  diaSelecionado,
+}: {
+  data: SeriesPoint[];
+  height?: number;
+  onSelecionarDia?: (ponto: SeriesPoint) => void;
+  diaSelecionado?: string | null;
+}) {
+  const clicavel = Boolean(onSelecionarDia);
+  const opacidade = (ponto: SeriesPoint) =>
+    !diaSelecionado || ponto.date === diaSelecionado ? 1 : 0.35;
+
   return (
     <ChartFrame height={height}>
-      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+      <BarChart
+        data={data}
+        margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+        onClick={(estado) => {
+          if (!onSelecionarDia) return;
+          const ponto = estado?.activePayload?.[0]?.payload as SeriesPoint | undefined;
+          if (ponto) onSelecionarDia(ponto);
+        }}
+        style={clicavel ? { cursor: "pointer" } : undefined}
+      >
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
         <XAxis
           dataKey="date"
@@ -139,20 +169,16 @@ export function ReachChart({ data, height = 260 }: { data: SeriesPoint[]; height
           width={52}
         />
         <Tooltip content={<ChartTooltip />} cursor={{ fill: "oklch(1 0 0 / 4%)" }} />
-        <Bar
-          dataKey="organicReach"
-          name="Orgânico"
-          stackId="reach"
-          fill={ORGANIC_COLOR}
-          radius={[0, 0, 0, 0]}
-        />
-        <Bar
-          dataKey="paidReach"
-          name="Pago"
-          stackId="reach"
-          fill={PAID_COLOR}
-          radius={[4, 4, 0, 0]}
-        />
+        <Bar dataKey="organicReach" name="Orgânico" stackId="reach" radius={[0, 0, 0, 0]}>
+          {data.map((ponto) => (
+            <Cell key={ponto.date} fill={ORGANIC_COLOR} fillOpacity={opacidade(ponto)} />
+          ))}
+        </Bar>
+        <Bar dataKey="paidReach" name="Pago" stackId="reach" radius={[4, 4, 0, 0]}>
+          {data.map((ponto) => (
+            <Cell key={ponto.date} fill={PAID_COLOR} fillOpacity={opacidade(ponto)} />
+          ))}
+        </Bar>
       </BarChart>
     </ChartFrame>
   );

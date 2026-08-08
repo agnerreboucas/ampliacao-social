@@ -1,0 +1,70 @@
+# Reconstrói o HTML sempre que os números mudam.
+#
+# O ciclo que isto fecha: alguém digita as leituras do dia na plataforma, baixa
+# o `dados/plataforma.json`, substitui o arquivo no repositório e dá push. A
+# partir daí é automático — o HTML publicado passa a mostrar os números novos,
+# sem servidor rodando e sem custo mensal.
+#
+# Rode quantas vezes por dia quiser: uma execução leva cerca de um minuto, e o
+# plano gratuito do GitHub Actions cobre folgadamente três por dia.
+name: Publicar HTML
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dados/**"
+      - "src/**"
+      - "scripts/build-html.mjs"
+      - "index.static.html"
+      - "vite.static.config.ts"
+      - "package.json"
+  # Permite disparar à mão pela aba Actions, sem precisar de um commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Três pushes seguidos não devem publicar três vezes: vale o último.
+concurrency:
+  group: publicar-html
+  cancel-in-progress: true
+
+jobs:
+  construir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Se um número entrou errado no formato, é melhor a publicação falhar do
+      # que o link do cliente abrir quebrado.
+      - name: Verificar
+        run: |
+          npx tsc --noEmit
+          npm test
+
+      - name: Gerar o HTML
+        run: npm run build:html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-static
+
+  publicar:
+    needs: construir
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

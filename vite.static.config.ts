@@ -45,6 +45,18 @@ export default defineConfig({
         find: /^@\/lib\/social\/windsor\/cliente\.server$/,
         replacement: resolvePath("./src/static/servidor-stub.ts"),
       },
+      // Os dados manuais não vêm do disco no navegador: vêm de uma tag
+      // <script type="application/json"> que o build-html embute. O alias
+      // precisa casar o especificador inteiro — o Vite troca só o trecho que a
+      // expressão captura, e um casamento parcial produziria um caminho colado.
+      {
+        find: /^@\/lib\/social\/snapshot\.server$/,
+        replacement: resolvePath("./src/static/dados-embutidos.ts"),
+      },
+      {
+        find: /^\.\/snapshot\.server$/,
+        replacement: resolvePath("./src/static/dados-embutidos.ts"),
+      },
       { find: /^@\//, replacement: `${resolvePath("./src")}/` },
     ],
     dedupe: ["react", "react-dom", "@tanstack/react-router", "@tanstack/react-query"],

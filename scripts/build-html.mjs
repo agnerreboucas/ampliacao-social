@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -9,6 +10,11 @@ import { fileURLToPath } from "node:url";
  * compartilhado ou até direto do disco. Serve para demonstrar a plataforma sem
  * subir servidor; os dados continuam sendo os mesmos dados semeados da
  * aplicação real, e o que for criado durante a visita vive só naquela aba.
+ *
+ * Se existir `dados/plataforma.json`, o conteúdo é embutido em uma tag
+ * `<script type="application/json">` e a plataforma abre com esses números em
+ * vez da semente de demonstração. É assim que a atualização manual chega ao
+ * HTML publicado: digitar, commitar o JSON, e o build faz o resto.
  *
  * Uso: bun run build:html   (roda o build estático antes)
  */
@@ -23,6 +29,19 @@ const [css, js] = await Promise.all([
 // Uma ocorrência literal de "</script>" dentro do bundle encerraria a tag antes
 // da hora; escapar a barra mantém o JavaScript idêntico para o motor.
 const inlineJs = js.replace(/<\/script>/gi, "<\\/script>");
+
+const arquivoDeDados = fileURLToPath(new URL("../dados/plataforma.json", import.meta.url));
+let tagDeDados = "";
+if (existsSync(arquivoDeDados)) {
+  const dados = await readFile(arquivoDeDados, "utf-8");
+  // O mesmo cuidado da tag de script: dentro de JSON, "<" só aparece em texto,
+  // então escapá-lo é seguro e impede que a tag feche antes da hora.
+  const seguro = dados.replace(/</g, "\\u003c");
+  tagDeDados = `\n    <script type="application/json" id="dados-plataforma">${seguro}</script>`;
+  console.log(`Dados embutidos: dados/plataforma.json (${(Buffer.byteLength(dados) / 1024).toFixed(0)} KB)`);
+} else {
+  console.log("Sem dados/plataforma.json — o HTML sai com a semente de demonstração.");
+}
 
 const html = `<!doctype html>
 <html lang="pt-BR">
@@ -39,7 +58,7 @@ ${css}
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>${tagDeDados}
     <script type="module">
 ${inlineJs}
     </script>
@@ -47,8 +66,11 @@ ${inlineJs}
 </html>
 `;
 
-const output = dist("social-hub.html");
-await writeFile(output, html, "utf-8");
+// Dois nomes, mesmo conteúdo: `social-hub.html` é o arquivo que se baixa e se
+// manda por WhatsApp; `index.html` é o que a hospedagem estática serve na raiz.
+await writeFile(dist("social-hub.html"), html, "utf-8");
+await writeFile(dist("index.html"), html, "utf-8");
 
 const sizeMb = (Buffer.byteLength(html) / 1024 / 1024).toFixed(2);
 console.log(`HTML único gerado: dist-static/social-hub.html (${sizeMb} MB)`);
+console.log("Cópia para hospedagem: dist-static/index.html");

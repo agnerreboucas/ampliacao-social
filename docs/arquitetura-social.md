@@ -33,6 +33,7 @@ semeados — cada um exerce um papel diferente:
 | `/social/publicacao/$postId` | 3.3 — detalhe da publicação, desempenho e republicação |
 | `/social/impulsionamentos` | 3.4 — mídia paga |
 | `/social/relacionamento` | 3.5 — comentários e mensagens de todas as redes, com graus de relação e resposta em lote |
+| `/social/atualizar` | 3.2 — entrada manual dos números, com exportação para o Git |
 | `/social/relatorios` | 3.6 — geração e compartilhamento |
 | `/social/equipe` | 3.7 — usuários e permissões |
 | `/relatorio/$token` | 3.6 — página pública somente leitura (sem sessão) |
@@ -47,6 +48,9 @@ src/lib/social/analytics.ts    recorte por período, resumo, orgânico x pago, s
 src/lib/social/format.ts       formatação pt-BR (números, moeda, datas, rótulos)
 src/lib/social/permissions.ts  o que cada papel pode acessar na interface
 src/lib/social/relacionamento.ts  graus de relação, consolidação por pessoa e regra de envio em lote
+src/lib/social/atualizacao.ts  entrada manual: aplicar valores ao histórico e comparar leituras do dia
+src/lib/social/snapshot.ts     o estado como arquivo JSON, versionado e validado
+src/lib/social/snapshot.server.ts  leitura e gravação do arquivo em disco
 src/lib/social/post-analytics.ts  desempenho por publicação (divisão por conta, curva, engajamento)
 src/lib/social/session.tsx     sessão do cliente + seletor de projeto
 src/lib/social/store.server.ts persistência (hoje em memória, semeada de forma determinística)
@@ -76,6 +80,12 @@ Real, e implementado como o produto pede:
 - Isolamento por projeto em todos os módulos e permissões por papel.
 - Preservação do histórico: desconectar uma conta não apaga suas métricas.
 - Relatório público somente leitura, que responde apenas enquanto o link estiver ativo.
+
+**Atualização manual dos números.** Enquanto a leitura automática depende da
+App Review, os números entram à mão e o estado vive em `dados/plataforma.json`,
+que vai para o Git — ver [atualizacao-manual.md](./atualizacao-manual.md),
+inclusive por que atualizar três vezes por dia não multiplica os pontos do
+histórico.
 
 **Relacionamento e envio em massa.** A área de relacionamento, os graus (não
 seguidor, seguidor, apoiador, defensor) e a resposta em lote estão documentados
@@ -110,9 +120,11 @@ Simulado, porque este ambiente não tem credenciais nem banco:
   um PRNG semeado pelo id da conta — mesma entrada, mesma curva.
 - **Tempo real da inbox.** A tela consulta o servidor a cada 15s e o store libera interações de uma
   fila para demonstrar a chegada de mensagens novas. Em produção isso vira webhook.
-- **Persistência.** O store e o cofre de credenciais vivem em memória do
-  processo: reiniciar o servidor recompõe a semente e exige reconectar as contas.
-  É o próximo passo obrigatório antes de operar com clientes.
+- **Persistência.** O cofre de credenciais vive em memória do processo:
+  reiniciar exige reconectar as contas. Os dados do produto, esses, sobrevivem —
+  ficam em `dados/plataforma.json`, gravado a cada atualização manual. Um banco
+  de verdade continua sendo o passo seguinte para operar com vários clientes em
+  paralelo.
 
 ## Próximos passos para produção
 

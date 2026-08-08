@@ -19,6 +19,7 @@ import { Route as SocialPublicacoesRouteImport } from './routes/social/publicaco
 import { Route as SocialImpulsionamentosRouteImport } from './routes/social/impulsionamentos'
 import { Route as SocialEquipeRouteImport } from './routes/social/equipe'
 import { Route as SocialContasRouteImport } from './routes/social/contas'
+import { Route as SocialAtualizarRouteImport } from './routes/social/atualizar'
 import { Route as RelatorioTokenRouteImport } from './routes/relatorio.$token'
 import { Route as OauthRetornoRouteImport } from './routes/oauth.retorno'
 import { Route as SocialPublicacaoPostIdRouteImport } from './routes/social/publicacao.$postId'
@@ -74,6 +75,11 @@ const SocialContasRoute = SocialContasRouteImport.update({
   path: '/contas',
   getParentRoute: () => SocialRoute,
 } as any)
+const SocialAtualizarRoute = SocialAtualizarRouteImport.update({
+  id: '/atualizar',
+  path: '/atualizar',
+  getParentRoute: () => SocialRoute,
+} as any)
 const RelatorioTokenRoute = RelatorioTokenRouteImport.update({
   id: '/relatorio/$token',
   path: '/relatorio/$token',
@@ -100,6 +106,7 @@ export interface FileRoutesByFullPath {
   '/social': typeof SocialRouteWithChildren
   '/oauth/retorno': typeof OauthRetornoRoute
   '/relatorio/$token': typeof RelatorioTokenRoute
+  '/social/atualizar': typeof SocialAtualizarRoute
   '/social/contas': typeof SocialContasRoute
   '/social/equipe': typeof SocialEquipeRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
@@ -115,6 +122,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/oauth/retorno': typeof OauthRetornoRoute
   '/relatorio/$token': typeof RelatorioTokenRoute
+  '/social/atualizar': typeof SocialAtualizarRoute
   '/social/contas': typeof SocialContasRoute
   '/social/equipe': typeof SocialEquipeRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
@@ -132,6 +140,7 @@ export interface FileRoutesById {
   '/social': typeof SocialRouteWithChildren
   '/oauth/retorno': typeof OauthRetornoRoute
   '/relatorio/$token': typeof RelatorioTokenRoute
+  '/social/atualizar': typeof SocialAtualizarRoute
   '/social/contas': typeof SocialContasRoute
   '/social/equipe': typeof SocialEquipeRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
@@ -150,6 +159,7 @@ export interface FileRouteTypes {
     | '/social'
     | '/oauth/retorno'
     | '/relatorio/$token'
+    | '/social/atualizar'
     | '/social/contas'
     | '/social/equipe'
     | '/social/impulsionamentos'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
     | '/'
     | '/oauth/retorno'
     | '/relatorio/$token'
+    | '/social/atualizar'
     | '/social/contas'
     | '/social/equipe'
     | '/social/impulsionamentos'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/social'
     | '/oauth/retorno'
     | '/relatorio/$token'
+    | '/social/atualizar'
     | '/social/contas'
     | '/social/equipe'
     | '/social/impulsionamentos'
@@ -273,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SocialContasRouteImport
       parentRoute: typeof SocialRoute
     }
+    '/social/atualizar': {
+      id: '/social/atualizar'
+      path: '/atualizar'
+      fullPath: '/social/atualizar'
+      preLoaderRoute: typeof SocialAtualizarRouteImport
+      parentRoute: typeof SocialRoute
+    }
     '/relatorio/$token': {
       id: '/relatorio/$token'
       path: '/relatorio/$token'
@@ -305,6 +324,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface SocialRouteChildren {
+  SocialAtualizarRoute: typeof SocialAtualizarRoute
   SocialContasRoute: typeof SocialContasRoute
   SocialEquipeRoute: typeof SocialEquipeRoute
   SocialImpulsionamentosRoute: typeof SocialImpulsionamentosRoute
@@ -317,6 +337,7 @@ interface SocialRouteChildren {
 }
 
 const SocialRouteChildren: SocialRouteChildren = {
+  SocialAtualizarRoute: SocialAtualizarRoute,
   SocialContasRoute: SocialContasRoute,
   SocialEquipeRoute: SocialEquipeRoute,
   SocialImpulsionamentosRoute: SocialImpulsionamentosRoute,
