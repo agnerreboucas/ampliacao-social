@@ -1,13 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { BadgeDollarSign, History, LoaderCircle, Rocket, Square, Target } from "lucide-react";
+import { BadgeDollarSign, History, LoaderCircle, Plug, Rocket, Square, Target } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import {
   criarImpulsionamento,
   encerrarImpulsionamento,
+  listarCampanhasWindsor,
   listarImpulsionamentos,
+  situacaoWindsor,
 } from "@/lib/api/social.functions";
 import {
   AccountAvatar,
@@ -36,6 +38,7 @@ import {
   formatLongDay,
 } from "@/lib/social/format";
 import { useSocialSession } from "@/lib/social/session";
+import type { PeriodoWindsor } from "@/lib/social/windsor/cliente.server";
 import type { Boost, BoostObjective, BoostStatus, Post, SocialAccount } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +64,7 @@ function ImpulsionamentosPage() {
   const { projectId } = useSocialSession();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [periodoWindsor, setPeriodoWindsor] = useState<PeriodoWindsor>("last_90d");
 
   const dados = useQuery({
     queryKey: ["social", "impulsionamentos", projectId],
@@ -69,6 +73,19 @@ function ImpulsionamentosPage() {
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["social"] });
+
+  // Windsor.ai: mídia paga real das contas que o cliente conectou lá.
+  const windsor = useQuery({
+    queryKey: ["social", "windsor", "situacao"],
+    queryFn: () => situacaoWindsor(),
+  });
+
+  const campanhasReais = useQuery({
+    queryKey: ["social", "windsor", "campanhas", periodoWindsor],
+    queryFn: () =>
+      listarCampanhasWindsor({ data: { conector: "facebook", periodo: periodoWindsor } }),
+    enabled: Boolean(windsor.data?.habilitada),
+  });
 
   const encerrar = useMutation({
     mutationFn: (boostId: string) => encerrarImpulsionamento({ data: { boostId } }),
@@ -122,6 +139,13 @@ function ImpulsionamentosPage() {
         />
         <StatCard label="Cliques" value={formatCompact(cliques)} icon={Rocket} />
       </div>
+
+      <CampanhasDoWindsor
+        habilitada={windsor.data?.habilitada ?? false}
+        consulta={campanhasReais}
+        periodo={periodoWindsor}
+        onPeriodo={setPeriodoWindsor}
+      />
 
       {dados.isPending ? (
         <LoadingBlock rows={3} />
@@ -565,5 +589,153 @@ function ImpulsionarDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const PERIODOS_WINDSOR: { id: PeriodoWindsor; rotulo: string }[] = [
+  { id: "last_30d", rotulo: "30 dias" },
+  { id: "last_90d", rotulo: "90 dias" },
+  { id: "last_6m", rotulo: "6 meses" },
+  { id: "last_year", rotulo: "1 ano" },
+  { id: "last_2years", rotulo: "2 anos" },
+];
+
+/**
+ * Campanhas reais de mídia paga vindas do Windsor.ai.
+ *
+ * Este é o caminho curto para dado real: o cliente conecta as contas no
+ * Windsor, a plataforma lê com uma chave só, e nada disso depende da revisão do
+ * aplicativo pela Meta — que é o que leva semanas.
+ */
+function CampanhasDoWindsor({
+  habilitada,
+  consulta,
+  periodo,
+  onPeriodo,
+}: {
+  habilitada: boolean;
+  consulta: ReturnType<typeof useQuery<Awaited<ReturnType<typeof listarCampanhasWindsor>>>>;
+  periodo: PeriodoWindsor;
+  onPeriodo: (periodo: PeriodoWindsor) => void;
+}) {
+  if (!habilitada) {
+    return (
+      <SectionCard
+        title="Mídia paga real pelo Windsor.ai"
+        description="Um atalho para dados reais sem esperar a revisão da Meta."
+        icon={Plug}
+      >
+        <p className="text-sm text-muted-foreground">
+          O Windsor.ai concentra as contas de anúncio do cliente (Meta Ads, Google Ads, TikTok e
+          outras). Conectando lá uma vez, a plataforma lê tudo com uma única chave.
+        </p>
+        <ol className="mt-4 space-y-2 text-sm">
+          <li className="flex gap-2">
+            <span className="text-muted-foreground">1.</span>
+            <span>
+              Conecte as contas do cliente em <span className="text-foreground">windsor.ai</span>.
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-muted-foreground">2.</span>
+            <span>
+              Copie a chave de API e preencha{" "}
+              <code className="rounded bg-secondary px-1.5 py-0.5 text-xs">WINDSOR_API_KEY</code>.
+            </span>
+          </li>
+        </ol>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Detalhes em <span className="text-foreground">docs/integracao-windsor.md</span>.
+        </p>
+      </SectionCard>
+    );
+  }
+
+  const dados = consulta.data;
+
+  return (
+    <SectionCard
+      title="Mídia paga real (Windsor.ai)"
+      description="Campanhas lidas direto das contas de anúncio conectadas."
+      icon={BadgeDollarSign}
+      actions={
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-border bg-card/60 p-1">
+          {PERIODOS_WINDSOR.map((opcao) => (
+            <button
+              key={opcao.id}
+              type="button"
+              onClick={() => onPeriodo(opcao.id)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                periodo === opcao.id
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {opcao.rotulo}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      {consulta.isPending ? (
+        <LoadingBlock rows={3} />
+      ) : !dados?.ok ? (
+        <InlineError>{dados?.erro ?? "Não foi possível ler o Windsor.ai."}</InlineError>
+      ) : dados.campanhas.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nenhuma veiculação neste período. Experimente um intervalo maior — contas sem campanhas
+          recentes só aparecem em janelas mais longas.
+        </p>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric label="Investido" value={formatCurrency(dados.totais.investido)} />
+            <Metric label="Alcance" value={formatCompact(dados.totais.alcance)} />
+            <Metric label="CPM" value={formatCurrency(dados.totais.cpm)} />
+            <Metric label="CPC" value={formatCurrency(dados.totais.cpc)} />
+          </div>
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                  <th className="pb-2 font-medium">Campanha</th>
+                  <th className="pb-2 text-right font-medium">Investido</th>
+                  <th className="pb-2 text-right font-medium">Alcance</th>
+                  <th className="pb-2 text-right font-medium">CPM</th>
+                  <th className="pb-2 text-right font-medium">Dias</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border tabular-nums">
+                {dados.campanhas.slice(0, 12).map((campanha) => (
+                  <tr key={`${campanha.contaAnuncios}-${campanha.campanha}`}>
+                    <td className="max-w-[280px] py-2">
+                      <div className="truncate" title={campanha.campanha}>
+                        {campanha.campanha}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {campanha.contaAnuncios}
+                      </div>
+                    </td>
+                    <td className="py-2 text-right">{formatCurrency(campanha.investido)}</td>
+                    <td className="py-2 text-right">{formatCompact(campanha.alcance)}</td>
+                    <td className="py-2 text-right text-muted-foreground">
+                      {formatCurrency(campanha.cpm)}
+                    </td>
+                    <td className="py-2 text-right text-muted-foreground">{campanha.dias}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="mt-4 text-xs text-muted-foreground">
+            {dados.campanhas.length} campanha(s) em {dados.contasDeAnuncio.join(", ")} · dados reais
+            lidos pelo Windsor.ai
+          </p>
+        </>
+      )}
+    </SectionCard>
   );
 }

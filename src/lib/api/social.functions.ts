@@ -8,7 +8,7 @@ import {
   splitOrganicPaid,
   summarize,
 } from "@/lib/social/analytics";
-import { getMetaConfig } from "@/lib/config.server";
+import { getMetaConfig, getWindsorConfig } from "@/lib/config.server";
 import {
   consumirState,
   descartarDescoberta,
@@ -22,6 +22,8 @@ import {
   lerDescoberta,
 } from "@/lib/social/credenciais.server";
 import { NETWORKS, hasBlockingIssues, validateDraft } from "@/lib/social/networks";
+import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
+import { CONECTORES_SOCIAIS } from "@/lib/social/windsor/windsor";
 import {
   curvaDoPost,
   dividirPorConta,
@@ -1181,4 +1183,125 @@ export const obterPublicacao = createServerFn({ method: "POST" })
       /** Se a conta é real, os números vêm da rede; se não, são de demonstração. */
       dadosReais: contas.some((conta) => conta.origem === "oauth"),
     };
+  });
+
+// ---------------------------------------------------------------------------
+// Windsor.ai — mídia paga real sem depender da revisão da Meta
+// ---------------------------------------------------------------------------
+
+const periodoWindsor = z
+  .enum(["last_7d", "last_30d", "last_90d", "last_6m", "last_year", "last_2years"])
+  .default("last_90d");
+
+export const situacaoWindsor = createServerFn({ method: "POST" }).handler(async () => {
+  const config = getWindsorConfig();
+  return {
+    habilitada: config.habilitada,
+    conectores: Object.entries(CONECTORES_SOCIAIS).map(([id, meta]) => ({ id, ...meta })),
+  };
+});
+
+/**
+ * Campanhas reais de mídia paga, vindas do Windsor.
+ *
+ * Devolve o que o gestor olha primeiro — investido, alcance, CPM, CPC — sem
+ * exigir que a plataforma tenha aprovação da Meta para anúncios.
+ */
+export const listarCampanhasWindsor = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ conector: z.string().default("facebook"), periodo: periodoWindsor }))
+  .handler(async ({ data }) => {
+    const config = getWindsorConfig();
+    if (!config.habilitada || !config.apiKey) {
+      return {
+        ok: false as const,
+        erro: "Defina WINDSOR_API_KEY para ler as contas conectadas no Windsor.ai.",
+      };
+    }
+
+    try {
+      const resultado = await buscarMidiaPaga(
+        { apiKey: config.apiKey, baseUrl: config.baseUrl },
+        data.conector,
+        data.periodo,
+      );
+
+      return {
+        ok: true as const,
+        conector: data.conector,
+        periodo: data.periodo,
+        campanhas: resultado.campanhas.slice(0, 50),
+        totais: resultado.totais,
+        contasDeAnuncio: resultado.contasDeAnuncio,
+        dias: resultado.dias,
+      };
+    } catch (erro) {
+      console.error("Falha ao ler o Windsor.ai:", erro);
+      return { ok: false as const, erro: explicarErroWindsor(erro) };
+    }
+  });
+
+/**
+ * Traz a mídia paga do Windsor para o histórico de uma conta da plataforma.
+ *
+ * Preenche apenas os campos pagos; o orgânico continua vindo da rede. Manter as
+ * duas origens separadas é o que sustenta o comparativo do PRD 3.2.
+ */
+export const sincronizarPagoWindsor = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      accountId: z.string(),
+      conector: z.string().default("facebook"),
+      periodo: periodoWindsor,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const config = getWindsorConfig();
+    const db = getDb();
+    const account = db.accounts.find((candidate) => candidate.id === data.accountId);
+    if (!account) throw new Error("Conta não encontrada.");
+
+    if (!config.habilitada || !config.apiKey) {
+      return { ok: false as const, erro: "WINDSOR_API_KEY não está configurada." };
+    }
+
+    try {
+      const { dias } = await buscarMidiaPaga(
+        { apiKey: config.apiKey, baseUrl: config.baseUrl },
+        data.conector,
+        data.periodo,
+      );
+
+      if (dias.length === 0) {
+        return {
+          ok: false as const,
+          erro: "O Windsor não devolveu veiculação neste período para o conector escolhido.",
+        };
+      }
+
+      // Mescla preservando o orgânico já guardado em cada dia.
+      const atuais = db.metrics.get(account.id) ?? [];
+      const porData = new Map(atuais.map((dia) => [dia.date, dia]));
+
+      for (const dia of dias) {
+        const existente = porData.get(dia.date);
+        if (existente) {
+          existente.paidReach = dia.paidReach;
+          existente.paidImpressions = dia.paidImpressions;
+          existente.adSpend = dia.adSpend;
+        } else {
+          porData.set(dia.date, dia);
+        }
+      }
+
+      db.metrics.set(
+        account.id,
+        [...porData.values()].sort((a, b) => a.date.localeCompare(b.date)),
+      );
+      account.lastSyncAt = new Date().toISOString();
+
+      return { ok: true as const, dias: dias.length, account };
+    } catch (erro) {
+      console.error(`Falha ao sincronizar ${account.id} pelo Windsor:`, erro);
+      return { ok: false as const, erro: explicarErroWindsor(erro) };
+    }
   });

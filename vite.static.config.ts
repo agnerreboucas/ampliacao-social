@@ -41,6 +41,10 @@ export default defineConfig({
         find: /^@\/lib\/social\/oauth\/meta\.server$/,
         replacement: resolvePath("./src/static/servidor-stub.ts"),
       },
+      {
+        find: /^@\/lib\/social\/windsor\/cliente\.server$/,
+        replacement: resolvePath("./src/static/servidor-stub.ts"),
+      },
       { find: /^@\//, replacement: `${resolvePath("./src")}/` },
     ],
     dedupe: ["react", "react-dom", "@tanstack/react-router", "@tanstack/react-query"],

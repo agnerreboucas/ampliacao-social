@@ -50,3 +50,23 @@ export function getMetaConfig() {
     habilitada: Boolean(appId && appSecret && redirectUri),
   };
 }
+
+/**
+ * Integração com o Windsor.ai.
+ *
+ * O Windsor é um agregador: o cliente conecta as contas lá (Meta Ads, Google
+ * Ads, GA4, Instagram orgânico e mais de 350 fontes) e a plataforma lê tudo com
+ * uma única chave. É o caminho mais rápido para dados reais, porque **não
+ * depende da revisão do aplicativo pela Meta**.
+ *
+ * Passo a passo: docs/integracao-windsor.md
+ */
+export function getWindsorConfig() {
+  const apiKey = process.env.WINDSOR_API_KEY;
+  return {
+    apiKey,
+    /** Útil para apontar a um proxy interno ou a um ambiente de testes. */
+    baseUrl: process.env.WINDSOR_BASE_URL,
+    habilitada: Boolean(apiKey),
+  };
+}

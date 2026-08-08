@@ -32,6 +32,10 @@ export function getMetaConfig() {
   };
 }
 
+export function getWindsorConfig() {
+  return { apiKey: undefined, baseUrl: undefined, habilitada: false };
+}
+
 // --- credenciais.server ----------------------------------------------------
 
 export function registrarState(): void {}
@@ -81,5 +85,15 @@ export async function buscarInsights(): Promise<DailyMetric[]> {
 }
 
 export function explicarErro(): string {
+  return INDISPONIVEL;
+}
+
+// --- windsor/cliente.server ------------------------------------------------
+
+export async function buscarMidiaPaga(): Promise<never> {
+  throw new Error(INDISPONIVEL);
+}
+
+export function explicarErroWindsor(): string {
   return INDISPONIVEL;
 }
