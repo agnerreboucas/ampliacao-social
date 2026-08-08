@@ -40,7 +40,7 @@
 :root {
   --radius: 1rem;
 
-  /* Base escura */
+  /* Dark premium base (Apple Music / Sonos inspired) */
   --background: oklch(0.13 0.012 270);          /* #0B0B0F */
   --foreground: oklch(1 0 0);                   /* #FFFFFF */
 
@@ -51,7 +51,7 @@
   --popover: oklch(0.16 0.015 270);
   --popover-foreground: oklch(1 0 0);
 
-  /* Marca: azul escuro */
+  /* Brand: Mercadinho Perfeito — Azul escuro */
   --primary: oklch(0.42 0.16 258);              /* deep blue */
   --primary-foreground: oklch(1 0 0);
 
@@ -84,18 +84,58 @@
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.74 0.18 50 / 60%);
 
-  /* Gradientes e sombras da marca */
+  /* Brand gradients & shadows */
   --gradient-brand: linear-gradient(135deg, oklch(0.42 0.16 258), oklch(0.32 0.14 268));
   --gradient-accent: linear-gradient(135deg, oklch(0.78 0.19 55), oklch(0.66 0.21 35));
+  --gradient-cover-1: linear-gradient(135deg, oklch(0.55 0.22 30), oklch(0.35 0.18 280));
+  --gradient-cover-2: linear-gradient(135deg, oklch(0.45 0.2 260), oklch(0.72 0.18 200));
+  --gradient-cover-3: linear-gradient(135deg, oklch(0.65 0.2 80), oklch(0.4 0.22 320));
+  --gradient-cover-4: linear-gradient(135deg, oklch(0.7 0.2 150), oklch(0.3 0.15 250));
 
   --shadow-glow-accent: 0 0 0 1px oklch(0.74 0.18 50 / 25%), 0 20px 60px -20px oklch(0.74 0.18 50 / 40%);
   --shadow-card: 0 1px 0 0 oklch(1 0 0 / 4%) inset, 0 30px 60px -30px oklch(0 0 0 / 60%);
 }
 
+/*
+ * O produto é assumidamente escuro. Declarar o esquema no `:root` faz o
+ * navegador desenhar em tons escuros tudo o que ele controla: seletor de
+ * data/hora, lista de um `select`, barra de rolagem e — o caso que mais
+ * incomoda — o preenchimento automático de login, que por padrão vem com fundo
+ * claro e texto escuro, ilegível sobre o nosso fundo.
+ */
+:root { color-scheme: dark; }
 .dark { color-scheme: dark; }
 
 @layer base {
   * { border-color: var(--color-border); }
+
+  /* Campos não dependem de herança para a cor do texto: se algum contêiner
+     definir uma cor própria, o que a pessoa digita continua legível. */
+  input,
+  textarea,
+  select {
+    color: var(--color-foreground);
+  }
+
+  ::placeholder {
+    color: var(--color-muted-foreground);
+    opacity: 1;
+  }
+
+  /* O Chrome pinta o campo preenchido automaticamente e ignora
+     `background-color`. A sombra interna cobre o fundo dele, e
+     `-webkit-text-fill-color` é a única forma de recolorir o texto. A transição
+     absurdamente longa evita o flash claro durante o preenchimento. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: var(--color-foreground);
+    caret-color: var(--color-foreground);
+    box-shadow: 0 0 0 1000px var(--color-secondary) inset;
+    transition: background-color 600000s 0s;
+  }
   html, body, #root { height: 100%; }
   body {
     background-color: var(--color-background);
@@ -121,6 +161,14 @@
   color: var(--accent-foreground);
 }
 
+@keyframes equalizer {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+@utility eq-bar {
+  animation: equalizer 1s ease-in-out infinite;
+  transform-origin: bottom;
+}
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
