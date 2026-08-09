@@ -29,7 +29,10 @@ create table if not exists usuarios (
   papel text not null,
   ultimo_acesso_em timestamptz not null,
   avatar_gradiente text not null,
-  ordem integer not null default 0
+  ordem integer not null default 0,
+  -- Derivação scrypt da senha, nunca a senha. Só existe aqui: o snapshot em
+  -- JSON, que vai para o Git, omite esta coluna de propósito.
+  senha_hash text
 );
 
 create unique index if not exists usuarios_email_unico on usuarios (lower(email));
@@ -205,6 +208,7 @@ create index if not exists atualizacoes_por_conta_dia on atualizacoes_manuais (c
 alter table projetos add column if not exists ordem integer not null default 0;
 alter table usuarios add column if not exists ordem integer not null default 0;
 alter table contas add column if not exists ordem integer not null default 0;
+alter table usuarios add column if not exists senha_hash text;
 `;
 
 /**

@@ -1,10 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { LoaderCircle, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { KeyRound, LoaderCircle, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { atualizarUsuario, convidarUsuario, listarUsuarios } from "@/lib/api/social.functions";
+import {
+  atualizarUsuario,
+  convidarUsuario,
+  definirSenha,
+  listarUsuarios,
+} from "@/lib/api/social.functions";
 import {
   AccountAvatar,
   InlineError,
@@ -22,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, formatRelative } from "@/lib/social/format";
+import { useSocialSession } from "@/lib/social/session";
 import type { Project, UserRole } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
@@ -106,6 +112,8 @@ function EquipePage() {
                       ))}
                     </select>
                   </div>
+
+                  <SenhaDoUsuario email={user.email} onSalvo={invalidate} />
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
@@ -328,5 +336,93 @@ function ConvidarDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Define a senha de alguém do time.
+ *
+ * Existe porque o script de linha de comando resolve só o primeiro acesso: ele
+ * grava no banco, e a aplicação já no ar continua com o estado que leu na
+ * subida. Feito por aqui, a troca vale na hora — memória e banco juntos.
+ */
+function SenhaDoUsuario({ email, onSalvo }: { email: string; onSalvo: () => void }) {
+  const { session } = useSocialSession();
+  const [aberto, setAberto] = useState(false);
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+
+  const salvar = useMutation({
+    mutationFn: () =>
+      definirSenha({
+        data: { email, senhaNova: senha, solicitanteId: session?.user.id ?? "" },
+      }),
+    onSuccess: (resultado) => {
+      if (!resultado.ok) {
+        setErro(resultado.erro);
+        return;
+      }
+      setSenha("");
+      setErro(null);
+      setAberto(false);
+      onSalvo();
+      toast.success(`Senha de ${email} definida.`);
+    },
+    onError: () => setErro("Não foi possível definir a senha."),
+  });
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-secondary"
+      >
+        <KeyRound className="size-3.5" />
+        Definir senha
+      </button>
+    );
+  }
+
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <label
+        htmlFor={`senha-${email}`}
+        className="text-xs uppercase tracking-[0.14em] text-muted-foreground"
+      >
+        Senha nova
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id={`senha-${email}`}
+          type="password"
+          value={senha}
+          autoComplete="new-password"
+          onChange={(event) => setSenha(event.target.value)}
+          placeholder="pelo menos 8 caracteres"
+          className="w-52 rounded-lg border border-border bg-secondary px-3 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <button
+          type="button"
+          onClick={() => salvar.mutate()}
+          disabled={salvar.isPending || senha.length < 8}
+          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-60"
+        >
+          Salvar
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAberto(false);
+            setSenha("");
+            setErro(null);
+          }}
+          className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+        >
+          Cancelar
+        </button>
+      </div>
+      {erro ? <InlineError>{erro}</InlineError> : null}
+    </div>
   );
 }

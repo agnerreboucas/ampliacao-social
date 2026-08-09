@@ -94,11 +94,13 @@ export function paraProjeto(linha: Linha): Project {
 }
 
 export function paraUsuario(linha: Linha, projectIds: string[]): PlatformUser {
+  const senhaHash = textoOuNulo(linha.senha_hash);
   return {
     id: texto(linha.id),
     name: texto(linha.nome),
     email: texto(linha.email),
     role: texto(linha.papel) as PlatformUser["role"],
+    ...(senhaHash === null ? {} : { senhaHash }),
     projectIds,
     lastActiveAt: instante(linha.ultimo_acesso_em),
     avatarGradient: texto(linha.avatar_gradiente),
@@ -253,6 +255,7 @@ export function deUsuario(usuario: PlatformUser, ordem = 0): unknown[] {
     usuario.lastActiveAt,
     usuario.avatarGradient,
     ordem,
+    usuario.senhaHash ?? null,
   ];
 }
 

@@ -1,6 +1,6 @@
 import { NETWORKS } from "./networks";
 import { classificarPorInteracoes } from "./relacionamento";
-import { carregarEstadoInicial, gravarEstado } from "./snapshot.server";
+import { carregarEstadoInicial, gravarEstado, usandoBanco } from "./snapshot.server";
 import type { EstadoPersistivel } from "./snapshot";
 import type { ResultadoGravacao } from "./snapshot.server";
 import type {
@@ -100,11 +100,25 @@ function pick<T>(rand: () => number, items: T[]): T {
 // ---------------------------------------------------------------------------
 
 const PROJECTS: Project[] = [
+  // O projeto real vem primeiro: é onde se entra para trabalhar. Começa sem
+  // contas de propósito — elas entram em Contas, e os números em Atualizar.
+  { id: "proj-campanha", name: "Campanha Neon Cunha", client: "Campanha Neon Cunha" },
   { id: "proj-mercadinho", name: "Mercadinho Perfeito", client: "Mercadinho Perfeito Ltda." },
   { id: "proj-studio", name: "Studio Aurora", client: "Aurora Estética" },
 ];
 
+const TODOS_OS_PROJETOS = PROJECTS.map((projeto) => projeto.id);
+
 const USERS: PlatformUser[] = [
+  {
+    id: "user-campanha",
+    name: "Campanha Neon Cunha",
+    email: "campanha.neoncunha@gmail.com",
+    role: "administrador",
+    projectIds: TODOS_OS_PROJETOS,
+    lastActiveAt: new Date().toISOString(),
+    avatarGradient: GRADIENTS[4],
+  },
   {
     id: "user-ana",
     name: "Ana Ribeiro",
@@ -848,6 +862,22 @@ const estadoGuardado: EstadoPersistivel | null = await carregarEstadoInicial().c
   console.error("Não foi possível carregar o estado guardado; usando a semente.", erro);
   return null;
 });
+
+/**
+ * Primeira subida com banco vazio: a semente é gravada.
+ *
+ * Sem isto, a plataforma abriria mostrando usuários e projetos que não existem
+ * em tabela nenhuma — e definir a senha de alguém falharia com "usuário não
+ * encontrado", que é confuso justamente no primeiro minuto de uso.
+ */
+if (estadoGuardado === null && usandoBanco()) {
+  const resultado = await gravarEstado(getDb());
+  if (resultado.gravado) {
+    console.log(`Banco vazio: estado inicial gravado em ${resultado.destino}.`);
+  } else {
+    console.error("Não foi possível gravar o estado inicial no banco.", resultado.erro);
+  }
+}
 
 export function getDb(): SocialDatabase {
   if (!globalStore.__socialDb) {

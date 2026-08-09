@@ -32,7 +32,13 @@ import {
   variacaoEntre,
 } from "@/lib/social/atualizacao";
 import { desserializar, nomeDoArquivo, serializar } from "@/lib/social/snapshot";
-import { destinoDosDados } from "@/lib/social/snapshot.server";
+import { destinoDosDados, usandoBanco } from "@/lib/social/snapshot.server";
+import {
+  TAMANHO_MINIMO_SENHA,
+  gerarHash,
+  pareceHash,
+  verificarSenha,
+} from "@/lib/social/senha.server";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
 import { CONECTORES_SOCIAIS } from "@/lib/social/windsor/windsor";
 import {
@@ -94,19 +100,41 @@ const mediaSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * Autenticação da plataforma. Enquanto não há provedor de identidade, valida o
- * e-mail contra os usuários cadastrados; a senha é aceita em qualquer valor não
- * vazio e nunca é persistida.
+ * Autenticação da plataforma.
+ *
+ * A senha é conferida contra o hash guardado (scrypt com sal). Quem ainda não
+ * definiu senha não entra — exceto no modo demonstração, onde não existe dado de
+ * cliente para proteger e a graça é justamente qualquer pessoa poder olhar.
+ *
+ * "Modo demonstração" é ausência de banco: sem `DATABASE_URL`, a plataforma está
+ * rodando com a semente. Amarrar a regra a isso evita uma variável a mais para
+ * alguém esquecer de ligar — e o esquecimento aqui é caro.
+ *
+ * As respostas de erro não distinguem "e-mail não existe" de "senha errada".
+ * Distinguir entregaria, a quem tentasse, a lista de quem tem conta.
  */
 export const autenticar = createServerFn({ method: "POST" })
   .inputValidator(z.object({ email: z.string().email(), senha: z.string().min(1) }))
   .handler(async ({ data }) => {
     const db = getDb();
+    const demonstracao = !usandoBanco();
+    const generico = "E-mail ou senha incorretos.";
+
     const user = db.users.find(
       (candidate) => candidate.email.toLowerCase() === data.email.toLowerCase(),
     );
     if (!user) {
-      return { ok: false as const, erro: "E-mail não encontrado nesta organização." };
+      return { ok: false as const, erro: generico };
+    }
+
+    if (pareceHash(user.senhaHash)) {
+      const confere = await verificarSenha(data.senha, user.senhaHash);
+      if (!confere) return { ok: false as const, erro: generico };
+    } else if (!demonstracao) {
+      return {
+        ok: false as const,
+        erro: "Esta conta ainda não tem senha definida. Peça a um administrador para definir uma.",
+      };
     }
 
     user.lastActiveAt = new Date().toISOString();
@@ -117,6 +145,59 @@ export const autenticar = createServerFn({ method: "POST" })
         projects: db.projects.filter((project) => user.projectIds.includes(project.id)),
       },
     };
+  });
+
+/**
+ * Define ou troca a senha de um usuário.
+ *
+ * Trocar a própria senha exige a atual. Um administrador pode definir a de
+ * outra pessoa sem ela — é como se recupera o acesso de quem esqueceu.
+ */
+export const definirSenha = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      email: z.string().email(),
+      senhaNova: z.string().min(TAMANHO_MINIMO_SENHA),
+      senhaAtual: z.string().optional(),
+      /** Quem está pedindo. Só administrador define a senha de outra pessoa. */
+      solicitanteId: z.string(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const alvo = db.users.find(
+      (candidate) => candidate.email.toLowerCase() === data.email.toLowerCase(),
+    );
+    if (!alvo) return { ok: false as const, erro: "Usuário não encontrado." };
+
+    const solicitante = db.users.find((candidate) => candidate.id === data.solicitanteId);
+    if (!solicitante) return { ok: false as const, erro: "Sessão inválida. Entre de novo." };
+
+    const ehOProprio = solicitante.id === alvo.id;
+    if (!ehOProprio && solicitante.role !== "administrador") {
+      return { ok: false as const, erro: "Só um administrador define a senha de outra pessoa." };
+    }
+
+    // Trocar a própria senha exige a atual: sem isso, uma sessão esquecida
+    // aberta vira uma conta tomada.
+    if (ehOProprio && pareceHash(alvo.senhaHash)) {
+      const confere = data.senhaAtual
+        ? await verificarSenha(data.senhaAtual, alvo.senhaHash)
+        : false;
+      if (!confere) return { ok: false as const, erro: "A senha atual não confere." };
+    }
+
+    try {
+      alvo.senhaHash = await gerarHash(data.senhaNova);
+    } catch (erro) {
+      return {
+        ok: false as const,
+        erro: erro instanceof Error ? erro.message : "Não foi possível definir a senha.",
+      };
+    }
+
+    const gravacao = await persistir();
+    return { ok: true as const, gravacao };
   });
 
 export const listarUsuarios = createServerFn({ method: "POST" }).handler(async () => {

@@ -82,6 +82,10 @@ Real, e implementado como o produto pede:
 - Preservação do histórico: desconectar uma conta não apaga suas métricas.
 - Relatório público somente leitura, que responde apenas enquanto o link estiver ativo.
 
+**Acesso e senhas.** A senha é conferida contra um hash scrypt e nunca entra no
+repositório — ver [acesso.md](./acesso.md). Sem banco, a plataforma está em modo
+demonstração e dispensa senha; com banco, conta sem senha não entra.
+
 **Banco de dados.** Com `DATABASE_URL` definida, o estado vive em Postgres
 (Neon, Supabase, qualquer um) em vez do arquivo JSON — ver
 [banco-de-dados.md](./banco-de-dados.md). A troca acontece em um ponto só:
@@ -117,9 +121,9 @@ Simulado, porque este ambiente não tem credenciais nem banco:
 - **Publicar, impulsionar e responder nas redes.** A conexão e a leitura de
   métricas chamam a Graph API de verdade; os endpoints de escrita entram depois
   da revisão das permissões pela Meta, que é o que os libera.
-- **Autenticação.** `autenticar` valida o e-mail contra os usuários semeados e o cliente guarda a
-  sessão no `localStorage`. Ao plugar um provedor de identidade (ou cookie de sessão assinado), só
-  `session.tsx` e essa função mudam.
+- **Autenticação.** A senha agora é real (scrypt com sal, ver
+  [acesso.md](./acesso.md)). O que continua pendente é a sessão: ela vive no
+  `localStorage`, sem expiração e sem cookie assinado.
 - **Sincronização automática.** `sincronizarContaReal` lê a Graph API de verdade
   quando a conta foi conectada por OAuth, mas ainda é disparada por botão: falta
   o job periódico. As contas de demonstração continuam com histórico gerado por
@@ -139,8 +143,9 @@ Simulado, porque este ambiente não tem credenciais nem banco:
    [integracao-meta.md](./integracao-meta.md).
 3. Rotação automática de token antes de `tokenExpiresAt` (a cifragem em repouso
    já existe).
-4. Autorização por sessão nas funções de servidor: hoje elas confiam no
-   `projectId` que o cliente envia.
+4. **Autorização por sessão nas funções de servidor** — hoje elas confiam no
+   `projectId` que o cliente envia. É o item mais importante da lista: com dois
+   clientes na mesma instalação, um consegue pedir os dados do outro.
 5. Fila de jobs para sincronização, publicação agendada e reprocessamento em falha de API.
 6. Webhooks de comentários e mensagens substituindo o polling do relacionamento.
 7. Retenção e anonimização dos dados de público conforme a LGPD.

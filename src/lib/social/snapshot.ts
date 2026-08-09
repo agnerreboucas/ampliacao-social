@@ -69,7 +69,15 @@ export function paraSnapshot(estado: EstadoPersistivel, geradoEm = new Date()): 
     versao: VERSAO_SNAPSHOT,
     geradoEm: geradoEm.toISOString(),
     projects: estado.projects,
-    users: estado.users,
+    // O hash da senha fica de fora — deliberadamente.
+    //
+    // Este arquivo é feito para ir ao Git e para ser baixado como cópia. Hash de
+    // frase memorável em repositório é quebrável por dicionário, e repositório
+    // privado hoje é repositório compartilhado amanhã. Senha só existe no banco.
+    //
+    // A consequência é coerente: sem banco, ninguém tem senha, e a plataforma
+    // está em modo demonstração — onde não há dado de cliente a proteger.
+    users: estado.users.map(({ senhaHash: _senhaHash, ...usuario }) => usuario),
     accounts: estado.accounts,
     metrics: [...estado.metrics.entries()].map(([accountId, dias]) => ({ accountId, dias })),
     audience: [...estado.audience.entries()].map(([accountId, insight]) => ({

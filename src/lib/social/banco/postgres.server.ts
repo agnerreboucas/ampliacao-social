@@ -363,7 +363,16 @@ export async function gravarNoBanco(
 
 const COLUNAS = {
   projetos: ["id", "nome", "cliente", "ordem"],
-  usuarios: ["id", "nome", "email", "papel", "ultimo_acesso_em", "avatar_gradiente", "ordem"],
+  usuarios: [
+    "id",
+    "nome",
+    "email",
+    "papel",
+    "ultimo_acesso_em",
+    "avatar_gradiente",
+    "ordem",
+    "senha_hash",
+  ],
   contas: [
     "id",
     "projeto_id",

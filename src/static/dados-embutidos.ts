@@ -24,6 +24,11 @@ export function caminhoDoArquivo(): string {
   return "(embutido no HTML)";
 }
 
+/** Não existe banco no HTML autocontido — é sempre demonstração. */
+export function usandoBanco(): boolean {
+  return false;
+}
+
 export function destinoDosDados(): { tipo: "postgres" | "arquivo"; descricao: string } {
   return { tipo: "arquivo", descricao: "embutido neste HTML" };
 }

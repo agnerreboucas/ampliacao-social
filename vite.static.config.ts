@@ -57,6 +57,15 @@ export default defineConfig({
         find: /^\.\/snapshot\.server$/,
         replacement: resolvePath("./src/static/dados-embutidos.ts"),
       },
+      // `scrypt` mora em node:crypto. Na demonstração não há senha para conferir.
+      {
+        find: /^@\/lib\/social\/senha\.server$/,
+        replacement: resolvePath("./src/static/senha-stub.ts"),
+      },
+      {
+        find: /^\.\/senha\.server$/,
+        replacement: resolvePath("./src/static/senha-stub.ts"),
+      },
       { find: /^@\//, replacement: `${resolvePath("./src")}/` },
     ],
     dedupe: ["react", "react-dom", "@tanstack/react-router", "@tanstack/react-query"],

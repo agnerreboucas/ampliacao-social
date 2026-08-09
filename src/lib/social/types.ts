@@ -247,6 +247,13 @@ export type PlatformUser = {
   name: string;
   email: string;
   role: UserRole;
+  /**
+   * Derivação da senha (scrypt com sal). Nunca a senha.
+   *
+   * Ausente significa "ainda não definiu senha" — e sem ela não se entra,
+   * exceto no modo demonstração, onde não existe dado de cliente para proteger.
+   */
+  senhaHash?: string;
   projectIds: string[];
   lastActiveAt: string; // ISO datetime
   avatarGradient: string;

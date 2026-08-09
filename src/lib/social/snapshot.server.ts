@@ -31,6 +31,18 @@ export function caminhoDoArquivo(): string {
   return resolve(process.cwd(), process.env.SOCIAL_DADOS_ARQUIVO ?? CAMINHO_PADRAO);
 }
 
+/**
+ * A plataforma está operando com banco?
+ *
+ * Reexportado aqui de propósito. Quem precisa da resposta — o store, a
+ * autenticação — importa deste módulo, e não do módulo do Postgres: no build
+ * estático `snapshot.server` inteiro é trocado por um substituto, e com ele some
+ * qualquer traço do driver do bundle do navegador.
+ */
+export function usandoBanco(): boolean {
+  return bancoConfigurado();
+}
+
 /** Descrição do destino atual, para a tela dizer onde os dados estão. */
 export function destinoDosDados(): { tipo: "postgres" | "arquivo"; descricao: string } {
   if (bancoConfigurado()) {
