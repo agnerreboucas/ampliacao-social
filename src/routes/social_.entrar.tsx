@@ -1,10 +1,11 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { BarChart3, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { autenticar } from "@/lib/api/social.functions";
+import { autenticar, situacaoAcesso } from "@/lib/api/social.functions";
 import { InlineError } from "@/components/social/primitives";
+import { SeletorTema } from "@/components/social/seletor-tema";
 import { SocialSessionProvider, useSocialSession } from "@/lib/social/session";
 
 export const Route = createFileRoute("/social_/entrar")({
@@ -36,6 +37,9 @@ function LoginScreen() {
       navigate({ to: "/social", replace: true });
     }
   }, [ready, session, navigate]);
+
+  // Saber se há banco muda o que a tela promete a quem vai digitar.
+  const acesso = useQuery({ queryKey: ["social", "acesso"], queryFn: () => situacaoAcesso() });
 
   const login = useMutation({
     mutationFn: (input: { email: string; senha: string }) => autenticar({ data: input }),
@@ -70,70 +74,86 @@ function LoginScreen() {
           </div>
         </div>
 
-        <h1 className="mt-8 text-2xl font-semibold tracking-tight">Entrar na plataforma</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Gestão, métricas e atendimento das suas redes sociais em um só painel.
-        </p>
+        <div className="surface-card mt-7 p-6">
+          <h1 className="text-2xl font-semibold">Entrar na plataforma</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Gestão, métricas e atendimento das suas redes sociais em um só painel.
+          </p>
 
-        <form
-          className="mt-6 space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setErro(null);
-            login.mutate({ email, senha });
-          }}
-        >
-          <div className="space-y-1.5">
-            <label htmlFor="email" className="text-sm font-medium">
-              E-mail
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="senha" className="text-sm font-medium">
-              Senha
-            </label>
-            <input
-              id="senha"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={senha}
-              onChange={(event) => setSenha(event.target.value)}
-              className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-
-          {erro ? <InlineError>{erro}</InlineError> : null}
-
-          <button
-            type="submit"
-            disabled={login.isPending}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+          <form
+            className="mt-6 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setErro(null);
+              login.mutate({ email, senha });
+            }}
           >
-            {login.isPending ? <LoaderCircle className="size-4 animate-spin" /> : null}
-            Entrar
-          </button>
-        </form>
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="text-sm font-medium">
+                E-mail
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="w-full rounded-xl border border-border bg-secondary/60 px-3.5 py-2.5 text-sm outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+              />
+            </div>
 
-        <p className="mt-6 rounded-lg border border-border bg-card/60 px-3 py-2.5 text-xs text-muted-foreground">
-          Ambiente de demonstração: entre com um dos usuários cadastrados (
-          <span className="text-foreground">ana@</span>,{" "}
-          <span className="text-foreground">bruno@</span>,{" "}
-          <span className="text-foreground">carla@</span> ou{" "}
-          <span className="text-foreground">diego@</span>
-          ampliacao.com.br) e qualquer senha. Cada usuário tem um papel diferente e vê um conjunto
-          distinto de módulos.
+            <div className="space-y-1.5">
+              <label htmlFor="senha" className="text-sm font-medium">
+                Senha
+              </label>
+              <input
+                id="senha"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={senha}
+                onChange={(event) => setSenha(event.target.value)}
+                className="w-full rounded-xl border border-border bg-secondary/60 px-3.5 py-2.5 text-sm outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+              />
+            </div>
+
+            {erro ? <InlineError>{erro}</InlineError> : null}
+
+            <button
+              type="submit"
+              disabled={login.isPending}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-[background-color,transform] duration-150 hover:bg-primary/90 active:scale-[0.985] disabled:opacity-60 disabled:active:scale-100"
+            >
+              {login.isPending ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              Entrar
+            </button>
+          </form>
+        </div>
+
+        <p className="mt-5 px-1 text-xs leading-relaxed text-muted-foreground">
+          {acesso.data?.demonstracao === false ? (
+            <>
+              Use o e-mail e a senha da sua conta. Se ainda não tem senha definida, peça a um
+              administrador — ela é definida pela tela de{" "}
+              <span className="text-foreground">Equipe</span>.
+            </>
+          ) : (
+            <>
+              Ambiente de demonstração: entre com um dos usuários cadastrados (
+              <span className="text-foreground">ana@</span>,{" "}
+              <span className="text-foreground">bruno@</span>,{" "}
+              <span className="text-foreground">carla@</span> ou{" "}
+              <span className="text-foreground">diego@</span>
+              ampliacao.com.br) e qualquer senha. Cada usuário tem um papel diferente e vê um
+              conjunto distinto de módulos.
+            </>
+          )}
         </p>
+
+        <div className="mt-6 flex justify-center">
+          <SeletorTema />
+        </div>
       </div>
     </div>
   );

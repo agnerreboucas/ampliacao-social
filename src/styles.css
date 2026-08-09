@@ -316,6 +316,64 @@
     background-attachment: fixed;
   }
 
+
+  /*
+   * Espacejamento por tamanho.
+   *
+   * Tipografia de sistema aperta as letras conforme o texto cresce: um título
+   * grande com o mesmo espacejamento de um parágrafo parece esparramado. A
+   * escala abaixo imita esse comportamento — quanto maior, mais junto.
+   */
+  .text-2xl,
+  .text-3xl {
+    letter-spacing: -0.021em;
+  }
+  .text-4xl,
+  .text-5xl,
+  .text-6xl,
+  .text-7xl {
+    letter-spacing: -0.028em;
+  }
+  /* Texto miúdo em caixa alta pede o contrário: solto, senão vira mancha. */
+  .uppercase {
+    letter-spacing: 0.06em;
+  }
+
+  /*
+   * Foco visível e discreto.
+   *
+   * Um anel fino e colorido, como o das interfaces da Apple, em vez do contorno
+   * padrão do navegador — que muda de cor entre temas e costuma sumir sobre
+   * fundo escuro.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  /*
+   * Resposta ao toque.
+   *
+   * Botão que afunda de leve ao ser pressionado é metade da sensação de
+   * qualidade em aplicativo de celular, e não custa nada. Fica de fora de quem
+   * pediu menos movimento.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    button:not(:disabled),
+    a[role="button"],
+    [role="radio"] {
+      transition:
+        transform 140ms cubic-bezier(0.25, 0.1, 0.25, 1),
+        background-color 140ms ease,
+        color 140ms ease,
+        border-color 140ms ease;
+    }
+    button:not(:disabled):active,
+    [role="radio"]:active {
+      transform: scale(0.97);
+    }
+  }
+
   /*
    * A troca de tema é instantânea de propósito, sem animação de cor.
    *

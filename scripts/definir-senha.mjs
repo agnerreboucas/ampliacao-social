@@ -38,9 +38,8 @@ if (!env.DATABASE_URL) {
 }
 
 const { gerarHash } = await import("../src/lib/social/senha.server.ts");
-const { obterPool, garantirEsquema, encerrarPool } = await import(
-  "../src/lib/social/banco/postgres.server.ts"
-);
+const { obterPool, garantirEsquema, encerrarPool } =
+  await import("../src/lib/social/banco/postgres.server.ts");
 
 const interativo = stdin.isTTY;
 const leitor = interativo ? createInterface({ input: stdin, output: stdout }) : null;
