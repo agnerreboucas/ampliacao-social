@@ -39,6 +39,28 @@ import {
   pareceHash,
   verificarSenha,
 } from "@/lib/social/senha.server";
+import {
+  abrirSessao,
+  exigirAdministrador,
+  exigirConta,
+  exigirContas,
+  exigirImpulsionamento,
+  exigirInteracao,
+  exigirRelatorio,
+  exigirProjetos,
+  exigirPublicacao,
+  exigirUsuario,
+  fecharSessao,
+  usuarioAtual,
+} from "@/lib/social/sessao.server";
+import {
+  avaliar,
+  mensagemDeBloqueio,
+  registrarAcerto,
+  registrarErro,
+  TENTATIVAS_ZERADAS,
+  type Tentativas,
+} from "@/lib/social/tentativas";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
 import { CONECTORES_SOCIAIS } from "@/lib/social/windsor/windsor";
 import {
@@ -85,6 +107,31 @@ import type {
  * camada de dados.
  */
 
+/**
+ * Tentativas de login por e-mail.
+ *
+ * Em memória e em `globalThis`, como o resto do estado volátil: sobrevive ao
+ * hot reload e some no restart. Reiniciar o servidor limpar os bloqueios é
+ * aceitável — quem controla o restart já tem acesso à máquina.
+ */
+const globalTentativas = globalThis as typeof globalThis & {
+  __socialTentativas?: Map<string, Tentativas>;
+};
+
+function mapaDeTentativas(): Map<string, Tentativas> {
+  globalTentativas.__socialTentativas ??= new Map();
+  return globalTentativas.__socialTentativas;
+}
+
+const lerTentativas = (chave: string): Tentativas =>
+  mapaDeTentativas().get(chave) ?? TENTATIVAS_ZERADAS;
+
+const gravarTentativas = (chave: string, valor: Tentativas) => {
+  mapaDeTentativas().set(chave, valor);
+};
+
+const esperar = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const periodSchema = z.enum(["7d", "30d", "90d", "12m", "tudo"]).default("30d");
 // Os limites reais por rede vivem em `networks.ts` e são reportados como erros
 // de validação legíveis; aqui só barramos valores absurdos.
@@ -119,17 +166,29 @@ export const autenticar = createServerFn({ method: "POST" })
     const db = getDb();
     const demonstracao = !usandoBanco();
     const generico = "E-mail ou senha incorretos.";
+    const chave = data.email.toLowerCase();
+
+    // O limite vale antes de qualquer verificação: adivinhar senha por força
+    // bruta não pode ser barato só porque o e-mail existe.
+    const decisao = avaliar(lerTentativas(chave), Date.now());
+    if (!decisao.permitido) {
+      return { ok: false as const, erro: mensagemDeBloqueio(decisao.segundosRestantes) };
+    }
+    if (decisao.atrasoMs > 0) await esperar(decisao.atrasoMs);
+
+    const recusar = (erro: string) => {
+      gravarTentativas(chave, registrarErro(lerTentativas(chave), Date.now()));
+      return { ok: false as const, erro };
+    };
 
     const user = db.users.find(
       (candidate) => candidate.email.toLowerCase() === data.email.toLowerCase(),
     );
-    if (!user) {
-      return { ok: false as const, erro: generico };
-    }
+    if (!user) return recusar(generico);
 
     if (pareceHash(user.senhaHash)) {
       const confere = await verificarSenha(data.senha, user.senhaHash);
-      if (!confere) return { ok: false as const, erro: generico };
+      if (!confere) return recusar(generico);
     } else if (!demonstracao) {
       return {
         ok: false as const,
@@ -137,7 +196,12 @@ export const autenticar = createServerFn({ method: "POST" })
       };
     }
 
+    gravarTentativas(chave, registrarAcerto());
     user.lastActiveAt = new Date().toISOString();
+
+    // A partir daqui quem manda é o cookie: o navegador não escolhe mais quem é.
+    await abrirSessao(user.id);
+
     return {
       ok: true as const,
       session: {
@@ -147,11 +211,41 @@ export const autenticar = createServerFn({ method: "POST" })
     };
   });
 
+/** Encerra a sessão do lado do servidor, apagando o cookie. */
+export const sair = createServerFn({ method: "POST" }).handler(async () => {
+  await fecharSessao();
+  return { ok: true as const };
+});
+
+/**
+ * Quem está autenticado agora, segundo o servidor.
+ *
+ * A tela consulta isto ao abrir. Antes a sessão vinha do `localStorage`, e um
+ * navegador com o valor certo escrito à mão "estava logado"; agora a resposta
+ * vem de um cookie que só o servidor sabe assinar.
+ */
+export const sessaoAtual = createServerFn({ method: "POST" }).handler(async () => {
+  const usuario = await usuarioAtual();
+  if (!usuario) return { autenticado: false as const };
+
+  const db = getDb();
+  return {
+    autenticado: true as const,
+    session: {
+      user: usuario,
+      projects: db.projects.filter((project) => usuario.projectIds.includes(project.id)),
+    },
+  };
+});
+
 /**
  * Define ou troca a senha de um usuário.
  *
  * Trocar a própria senha exige a atual. Um administrador pode definir a de
  * outra pessoa sem ela — é como se recupera o acesso de quem esqueceu.
+ *
+ * Quem está pedindo vem da sessão do servidor, não do corpo da requisição: um
+ * `solicitanteId` enviado pelo navegador seria só uma sugestão.
  */
 export const definirSenha = createServerFn({ method: "POST" })
   .inputValidator(
@@ -159,19 +253,16 @@ export const definirSenha = createServerFn({ method: "POST" })
       email: z.string().email(),
       senhaNova: z.string().min(TAMANHO_MINIMO_SENHA),
       senhaAtual: z.string().optional(),
-      /** Quem está pedindo. Só administrador define a senha de outra pessoa. */
-      solicitanteId: z.string(),
     }),
   )
   .handler(async ({ data }) => {
     const db = getDb();
+    const solicitante = await exigirUsuario();
+
     const alvo = db.users.find(
       (candidate) => candidate.email.toLowerCase() === data.email.toLowerCase(),
     );
     if (!alvo) return { ok: false as const, erro: "Usuário não encontrado." };
-
-    const solicitante = db.users.find((candidate) => candidate.id === data.solicitanteId);
-    if (!solicitante) return { ok: false as const, erro: "Sessão inválida. Entre de novo." };
 
     const ehOProprio = solicitante.id === alvo.id;
     if (!ehOProprio && solicitante.role !== "administrador") {
@@ -201,6 +292,7 @@ export const definirSenha = createServerFn({ method: "POST" })
   });
 
 export const listarUsuarios = createServerFn({ method: "POST" }).handler(async () => {
+  await exigirAdministrador();
   const db = getDb();
   return { users: db.users, projects: db.projects };
 });
@@ -214,6 +306,7 @@ export const atualizarUsuario = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirAdministrador();
     const db = getDb();
     const user = db.users.find((candidate) => candidate.id === data.userId);
     if (!user) throw new Error("Usuário não encontrado.");
@@ -232,6 +325,7 @@ export const convidarUsuario = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirAdministrador();
     const db = getDb();
     if (db.users.some((user) => user.email.toLowerCase() === data.email.toLowerCase())) {
       return { ok: false as const, erro: "Já existe um usuário com este e-mail." };
@@ -254,16 +348,28 @@ export const convidarUsuario = createServerFn({ method: "POST" })
 // Contas conectadas (PRD 3.1)
 // ---------------------------------------------------------------------------
 
-function accountsOfProject(projectId: string | undefined): SocialAccount[] {
+/**
+ * As contas que quem está pedindo pode ver.
+ *
+ * Este é o gargalo por onde quase toda leitura passa, e é aqui que a
+ * autorização mora. Antes a função recebia um `projectId` do navegador e
+ * confiava nele; agora ela confirma na sessão do servidor que a pessoa tem
+ * acesso àquele projeto — e, sem projeto informado, devolve só os projetos dela.
+ *
+ * O nome mudou junto com o comportamento de propósito: `accountsOfProject`
+ * soava como um filtro, e filtro é algo que se pode esquecer de aplicar.
+ */
+async function contasPermitidas(projectId: string | undefined): Promise<SocialAccount[]> {
+  const { projetos } = await exigirProjetos(projectId);
   const db = getDb();
-  return projectId ? db.accounts.filter((account) => account.projectId === projectId) : db.accounts;
+  return db.accounts.filter((account) => projetos.includes(account.projectId));
 }
 
 export const listarContas = createServerFn({ method: "POST" })
   .inputValidator(z.object({ projectId: z.string().optional() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    const accounts = accountsOfProject(data.projectId);
+    const accounts = await contasPermitidas(data.projectId);
     return {
       accounts,
       projects: db.projects,
@@ -295,6 +401,7 @@ export const conectarConta = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirProjetos(data.projectId);
     const db = getDb();
     const duplicated = db.accounts.some(
       (account) =>
@@ -348,6 +455,7 @@ export const atualizarConexao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirConta(data.accountId);
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
     if (!account) throw new Error("Conta não encontrada.");
@@ -396,7 +504,7 @@ export const obterPainel = createServerFn({ method: "POST" })
   .inputValidator(z.object({ projectId: z.string().optional(), period: periodSchema }))
   .handler(async ({ data }) => {
     const db = getDb();
-    const accounts = accountsOfProject(data.projectId);
+    const accounts = await contasPermitidas(data.projectId);
     const period = data.period as PeriodKey;
 
     const seriesByAccount = accounts.map((account) =>
@@ -441,6 +549,7 @@ export const obterPainel = createServerFn({ method: "POST" })
 export const obterConta = createServerFn({ method: "POST" })
   .inputValidator(z.object({ accountId: z.string(), period: periodSchema }))
   .handler(async ({ data }) => {
+    await exigirConta(data.accountId);
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
     if (!account) throw new Error("Conta não encontrada.");
@@ -486,6 +595,7 @@ export const validarRascunho = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirContas(data.accountIds);
     const db = getDb();
     const accounts = db.accounts.filter((account) => data.accountIds.includes(account.id));
     const issues = validateDraft(
@@ -499,7 +609,7 @@ export const listarPublicacoes = createServerFn({ method: "POST" })
   .inputValidator(z.object({ projectId: z.string().optional() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    const accounts = accountsOfProject(data.projectId);
+    const accounts = await contasPermitidas(data.projectId);
     const accountIds = new Set(accounts.map((account) => account.id));
     return {
       posts: db.posts
@@ -521,6 +631,8 @@ export const criarPublicacao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirProjetos(data.projectId);
+    await exigirContas(data.accountIds);
     const db = getDb();
     const accounts = db.accounts.filter((account) => data.accountIds.includes(account.id));
     const issues = validateDraft(
@@ -576,6 +688,7 @@ export const atualizarPublicacao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirPublicacao(data.postId);
     const db = getDb();
     const index = db.posts.findIndex((post) => post.id === data.postId);
     if (index === -1) throw new Error("Publicação não encontrada.");
@@ -648,6 +761,7 @@ export const republicarPublicacao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirPublicacao(data.postId);
     const db = getDb();
     const original = db.posts.find((candidate) => candidate.id === data.postId);
     if (!original) throw new Error("Publicação não encontrada.");
@@ -719,7 +833,7 @@ export const listarImpulsionamentos = createServerFn({ method: "POST" })
   .inputValidator(z.object({ projectId: z.string().optional() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    const accounts = accountsOfProject(data.projectId);
+    const accounts = await contasPermitidas(data.projectId);
     const accountIds = new Set(accounts.map((account) => account.id));
     const boosts = db.boosts.filter((boost) => accountIds.has(boost.accountId));
 
@@ -754,6 +868,8 @@ export const criarImpulsionamento = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirConta(data.accountId);
+    await exigirPublicacao(data.postId);
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
     if (!account) throw new Error("Conta não encontrada.");
@@ -806,6 +922,7 @@ export const criarImpulsionamento = createServerFn({ method: "POST" })
 export const encerrarImpulsionamento = createServerFn({ method: "POST" })
   .inputValidator(z.object({ boostId: z.string() }))
   .handler(async ({ data }) => {
+    await exigirImpulsionamento(data.boostId);
     const db = getDb();
     const boost = db.boosts.find((candidate) => candidate.id === data.boostId);
     if (!boost) throw new Error("Impulsionamento não encontrado.");
@@ -829,7 +946,7 @@ export const listarInbox = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const db = getDb();
     const novo: InboxItem | null = data.poll ? releaseIncoming() : null;
-    const accounts = accountsOfProject(data.projectId);
+    const accounts = await contasPermitidas(data.projectId);
     const accountIds = new Set(accounts.map((account) => account.id));
 
     const items = db.inbox
@@ -848,6 +965,7 @@ export const listarInbox = createServerFn({ method: "POST" })
 export const responderInbox = createServerFn({ method: "POST" })
   .inputValidator(z.object({ itemId: z.string(), texto: z.string().min(1), autor: z.string() }))
   .handler(async ({ data }) => {
+    await exigirInteracao(data.itemId);
     const db = getDb();
     const item = db.inbox.find((candidate) => candidate.id === data.itemId);
     if (!item) throw new Error("Interação não encontrada.");
@@ -885,6 +1003,7 @@ export const atualizarInbox = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirInteracao(data.itemId);
     const db = getDb();
     const item = db.inbox.find((candidate) => candidate.id === data.itemId);
     if (!item) throw new Error("Interação não encontrada.");
@@ -917,6 +1036,10 @@ export const responderEmLote = createServerFn({ method: "POST" })
     const db = getDb();
     const selecionados = db.inbox.filter((item) => data.itemIds.includes(item.id));
     if (selecionados.length === 0) throw new Error("Nenhuma interação encontrada.");
+
+    // Uma lista de ids é um convite a misturar projetos: basta um id de outro
+    // cliente no meio para vazar. Todos precisam passar pela mesma checagem.
+    await exigirContas([...new Set(selecionados.map((item) => item.accountId))]);
 
     const contaPorId = new Map(db.accounts.map((account) => [account.id, account]));
 
@@ -975,7 +1098,20 @@ export const classificarPessoa = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const db = getDb();
-    const itens = db.inbox.filter((item) => item.authorHandle === data.handle);
+    const usuario = await exigirUsuario();
+
+    // O mesmo @ pode aparecer em contas de projetos diferentes. A reclassificação
+    // só alcança as contas que esta pessoa administra — senão, marcar alguém como
+    // defensor num projeto mexeria no cadastro de outro cliente.
+    const contasPermitidas = new Set(
+      db.accounts
+        .filter((conta) => usuario.projectIds.includes(conta.projectId))
+        .map((conta) => conta.id),
+    );
+
+    const itens = db.inbox.filter(
+      (item) => item.authorHandle === data.handle && contasPermitidas.has(item.accountId),
+    );
     if (itens.length === 0) throw new Error("Pessoa não encontrada.");
     for (const item of itens) item.relacao = data.relacao;
     return { handle: data.handle, relacao: data.relacao, atualizados: itens.length };
@@ -993,7 +1129,7 @@ export const listarRelatorios = createServerFn({ method: "POST" })
       reports: db.reports
         .filter((report) => !data.projectId || report.projectId === data.projectId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-      accounts: accountsOfProject(data.projectId),
+      accounts: await contasPermitidas(data.projectId),
     };
   });
 
@@ -1008,6 +1144,7 @@ export const gerarRelatorio = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirProjetos(data.projectId);
     const db = getDb();
     const merged = mergeSeries(
       data.accountIds.map((id) => slicePeriod(db.metrics.get(id) ?? [], data.period as PeriodKey)),
@@ -1033,6 +1170,7 @@ export const gerarRelatorio = createServerFn({ method: "POST" })
 export const alternarCompartilhamento = createServerFn({ method: "POST" })
   .inputValidator(z.object({ reportId: z.string(), enabled: z.boolean() }))
   .handler(async ({ data }) => {
+    await exigirRelatorio(data.reportId);
     const db = getDb();
     const report = db.reports.find((candidate) => candidate.id === data.reportId);
     if (!report) throw new Error("Relatório não encontrado.");
@@ -1094,6 +1232,7 @@ export const obterRelatorioPublico = createServerFn({ method: "POST" })
  * botão que não funcionaria.
  */
 export const situacaoIntegracao = createServerFn({ method: "POST" }).handler(async () => {
+  await exigirUsuario();
   const config = getMetaConfig();
   const faltando: string[] = [];
   if (!config.appId) faltando.push("META_APP_ID");
@@ -1122,6 +1261,7 @@ const gruposEscopo = z
 export const iniciarConexaoMeta = createServerFn({ method: "POST" })
   .inputValidator(z.object({ projectId: z.string(), grupos: gruposEscopo }))
   .handler(async ({ data }) => {
+    await exigirProjetos(data.projectId);
     const config = getMetaConfig();
     if (!config.habilitada || !config.appId || !config.redirectUri) {
       return {
@@ -1161,6 +1301,7 @@ export const iniciarConexaoMeta = createServerFn({ method: "POST" })
 export const concluirConexaoMeta = createServerFn({ method: "POST" })
   .inputValidator(z.object({ code: z.string().min(1), state: z.string().min(1) }))
   .handler(async ({ data }) => {
+    await exigirUsuario();
     const config = getMetaConfig();
     if (!config.habilitada || !config.appId || !config.appSecret || !config.redirectUri) {
       return { ok: false as const, erro: "A integração com a Meta não está configurada." };
@@ -1233,6 +1374,7 @@ export const concluirConexaoMeta = createServerFn({ method: "POST" })
 export const conectarContasEscolhidas = createServerFn({ method: "POST" })
   .inputValidator(z.object({ descobertaId: z.string(), externalIds: z.array(z.string()).min(1) }))
   .handler(async ({ data }) => {
+    await exigirUsuario();
     const descoberta = lerDescoberta(data.descobertaId);
     if (!descoberta) {
       return {
@@ -1326,6 +1468,7 @@ export const sincronizarContaReal = createServerFn({ method: "POST" })
     z.object({ accountId: z.string(), dias: z.number().int().min(1).max(30).default(28) }),
   )
   .handler(async ({ data }) => {
+    await exigirConta(data.accountId);
     const config = getMetaConfig();
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
@@ -1380,6 +1523,7 @@ export const sincronizarContaReal = createServerFn({ method: "POST" })
 export const desconectarContaReal = createServerFn({ method: "POST" })
   .inputValidator(z.object({ accountId: z.string() }))
   .handler(async ({ data }) => {
+    await exigirConta(data.accountId);
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
     if (!account) throw new Error("Conta não encontrada.");
@@ -1400,6 +1544,7 @@ export const desconectarContaReal = createServerFn({ method: "POST" })
 export const obterPublicacao = createServerFn({ method: "POST" })
   .inputValidator(z.object({ postId: z.string() }))
   .handler(async ({ data }) => {
+    await exigirPublicacao(data.postId);
     const db = getDb();
     const post = db.posts.find((candidate) => candidate.id === data.postId);
     if (!post) return { ok: false as const };
@@ -1490,6 +1635,7 @@ export const situacaoWindsor = createServerFn({ method: "POST" }).handler(async 
 export const listarCampanhasWindsor = createServerFn({ method: "POST" })
   .inputValidator(z.object({ conector: z.string().default("facebook"), periodo: periodoWindsor }))
   .handler(async ({ data }) => {
+    await exigirUsuario();
     const config = getWindsorConfig();
     if (!config.habilitada || !config.apiKey) {
       return {
@@ -1535,6 +1681,7 @@ export const sincronizarPagoWindsor = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirConta(data.accountId);
     const config = getWindsorConfig();
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
@@ -1609,7 +1756,7 @@ export const situacaoAtualizacao = createServerFn({ method: "POST" })
   .inputValidator(z.object({ projectId: z.string().optional(), date: z.string().optional() }))
   .handler(async ({ data }) => {
     const db = getDb();
-    const contas = accountsOfProject(data.projectId);
+    const contas = await contasPermitidas(data.projectId);
     const hoje = data.date ?? toDayKey(new Date());
 
     const porConta = contas.map((conta) => {
@@ -1659,6 +1806,7 @@ export const registrarAtualizacao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await exigirConta(data.accountId);
     const db = getDb();
     const conta = db.accounts.find((candidate) => candidate.id === data.accountId);
     if (!conta) throw new Error("Conta não encontrada.");
@@ -1696,6 +1844,7 @@ export const registrarAtualizacao = createServerFn({ method: "POST" })
 
 /** Devolve o arquivo inteiro para download — o que vai para o commit. */
 export const exportarDados = createServerFn({ method: "POST" }).handler(async () => {
+  await exigirAdministrador();
   const db = getDb();
   return { conteudo: serializar(db), nome: nomeDoArquivo() };
 });
@@ -1704,6 +1853,7 @@ export const exportarDados = createServerFn({ method: "POST" }).handler(async ()
 export const importarDados = createServerFn({ method: "POST" })
   .inputValidator(z.object({ conteudo: z.string().min(1) }))
   .handler(async ({ data }) => {
+    await exigirAdministrador();
     try {
       const estado = desserializar(data.conteudo);
       substituirEstado(estado);
@@ -1744,7 +1894,7 @@ export const detalharPeriodo = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const db = getDb();
-    const contas = accountsOfProject(data.projectId);
+    const contas = await contasPermitidas(data.projectId);
     const [inicio, fim] =
       data.inicio <= data.fim ? [data.inicio, data.fim] : [data.fim, data.inicio];
     const dentro = (date: string) => date >= inicio && date <= fim;

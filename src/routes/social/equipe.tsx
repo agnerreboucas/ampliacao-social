@@ -354,9 +354,8 @@ function SenhaDoUsuario({ email, onSalvo }: { email: string; onSalvo: () => void
 
   const salvar = useMutation({
     mutationFn: () =>
-      definirSenha({
-        data: { email, senhaNova: senha, solicitanteId: session?.user.id ?? "" },
-      }),
+      // Quem está pedindo vem da sessão do servidor, não daqui.
+      definirSenha({ data: { email, senhaNova: senha } }),
     onSuccess: (resultado) => {
       if (!resultado.ok) {
         setErro(resultado.erro);

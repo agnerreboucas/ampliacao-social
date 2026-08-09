@@ -69,5 +69,8 @@ test("pareceHash distingue hash de qualquer outra coisa", async () => {
   assert.equal(pareceHash(undefined), false);
   assert.equal(pareceHash(null), false);
   assert.equal(pareceHash(""), false);
-  assert.equal(pareceHash("@EleitaEm2026"), false);
+  // Uma senha em texto puro, com os símbolos que costumam aparecer em uma:
+  // `pareceHash` precisa dizer não, senão uma senha guardada por engano sem
+  // hash passaria por hash e nunca seria migrada.
+  assert.equal(pareceHash("@UmaSenhaQualquer2026"), false);
 });
