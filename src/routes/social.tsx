@@ -17,6 +17,7 @@ import { useEffect } from "react";
 
 import { listarInbox } from "@/lib/api/social.functions";
 import { AccountAvatar } from "@/components/social/primitives";
+import { SeletorTema } from "@/components/social/seletor-tema";
 import { Toaster } from "@/components/ui/sonner";
 import { ROLE_LABELS } from "@/lib/social/format";
 import { can } from "@/lib/social/permissions";
@@ -166,6 +167,13 @@ function SocialShell() {
             );
           })}
         </nav>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border px-5 py-3">
+          <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+            Tema
+          </span>
+          <SeletorTema />
+        </div>
 
         <div className="hidden items-center gap-3 border-t border-border px-5 py-4 lg:flex">
           <AccountAvatar

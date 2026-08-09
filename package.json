@@ -12,7 +12,7 @@
     "format": "prettier --write .",
     "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "build:static": "vite build --config vite.static.config.ts",
-    "build:html": "vite build --config vite.static.config.ts && node scripts/build-html.mjs",
+    "build:html": "vite build --config vite.static.config.ts && node --experimental-strip-types scripts/build-html.mjs",
     "senha": "node --experimental-strip-types scripts/definir-senha.mjs"
   },
   "dependencies": {

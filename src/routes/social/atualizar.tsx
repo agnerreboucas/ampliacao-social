@@ -477,7 +477,7 @@ function Delta({ valor }: { valor: number }) {
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-0.5 font-medium",
-        positivo ? "text-[oklch(0.75_0.16_150)]" : "text-[oklch(0.7_0.19_25)]",
+        positivo ? "text-success" : "text-destructive",
       )}
     >
       {positivo ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}

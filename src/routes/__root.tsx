@@ -10,6 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import { SCRIPT_TEMA_INICIAL } from "../lib/social/tema";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
@@ -117,6 +118,14 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="pt-BR">
       <head>
         <HeadContent />
+        {/*
+         * Resolve o tema antes da primeira pintura.
+         *
+         * Precisa ser um script embutido e síncrono: qualquer coisa que espere o
+         * JavaScript da aplicação carregar deixa a página nascer clara e virar
+         * escura no instante seguinte — o "flash" que denuncia tema mal feito.
+         */}
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA_INICIAL }} />
       </head>
       <body>
         {children}

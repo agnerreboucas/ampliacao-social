@@ -2,7 +2,13 @@
 @source "../src";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * O tema é decidido pelo atributo `data-theme` na raiz do documento, escrito
+ * antes da primeira pintura por um script no `<head>`. Quando ele não existe —
+ * JavaScript desligado, ou o instante antes do script — vale a preferência do
+ * sistema operacional.
+ */
+@custom-variant dark (&:where([data-theme="escuro"], [data-theme="escuro"] *));
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -33,81 +39,236 @@
   --color-ring: var(--ring);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
 
-  --font-display: "Inter", system-ui, sans-serif;
+  --font-display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
 }
 
+/*
+ * Paleta
+ *
+ * Os valores de cor aparecem uma vez só, aqui. Os dois temas abaixo apenas
+ * apontam para eles — assim não existe a chance de corrigir um tom no escuro e
+ * esquecer o claro.
+ *
+ * A regra que atravessa tudo: **fundo escuro pede texto claro, fundo claro pede
+ * texto escuro.** Cada cor de superfície tem a sua cor de texto ao lado, e é
+ * sempre esse par que os componentes usam — nunca uma cor solta.
+ */
 :root {
+  /* --- Claro (referência: superfícies da Apple) ------------------------- */
+  --claro-fundo: oklch(0.968 0.002 286); /* #F5F5F7 */
+  --claro-superficie: oklch(1 0 0); /* branco puro nos cartões */
+  --claro-superficie-alta: oklch(1 0 0);
+  --claro-texto: oklch(0.21 0.004 286); /* #1D1D1F */
+  --claro-texto-suave: oklch(0.47 0.006 286); /* contraste ≥ 4.5 sobre branco e sobre a secundária */
+  --claro-secundaria: oklch(0.94 0.003 286);
+  --claro-borda: oklch(0.21 0.004 286 / 12%);
+  --claro-campo: oklch(0.21 0.004 286 / 16%);
+
+  --claro-primaria: oklch(0.52 0.18 256); /* azul, legível sobre branco */
+  --claro-primaria-texto: oklch(1 0 0);
+  --claro-destaque: oklch(0.49 0.15 45); /* laranja escuro: legível como texto sobre branco */
+  --claro-destaque-texto: oklch(1 0 0);
+  --claro-positivo: oklch(0.52 0.14 150);
+  --claro-positivo-texto: oklch(1 0 0);
+  --claro-atencao: oklch(0.55 0.13 75);
+  --claro-atencao-texto: oklch(1 0 0);
+  --claro-erro: oklch(0.53 0.2 27);
+  --claro-erro-texto: oklch(1 0 0);
+
+  /* --- Escuro ---------------------------------------------------------- */
+  --escuro-fundo: oklch(0.13 0.012 270);
+  --escuro-superficie: oklch(0.17 0.014 270);
+  --escuro-superficie-alta: oklch(0.21 0.016 270);
+  --escuro-texto: oklch(0.99 0 0);
+  --escuro-texto-suave: oklch(0.72 0.012 270);
+  --escuro-secundaria: oklch(0.24 0.018 270);
+  --escuro-borda: oklch(1 0 0 / 10%);
+  --escuro-campo: oklch(1 0 0 / 14%);
+
+  --escuro-primaria: oklch(0.52 0.17 258); /* branco por cima precisa de 4.5 */
+  --escuro-primaria-texto: oklch(1 0 0);
+  --escuro-destaque: oklch(0.78 0.16 55); /* laranja claro sobre fundo escuro */
+  --escuro-destaque-texto: oklch(0.16 0.01 270);
+  --escuro-positivo: oklch(0.78 0.16 152);
+  --escuro-positivo-texto: oklch(0.14 0.01 270);
+  --escuro-atencao: oklch(0.82 0.14 82);
+  --escuro-atencao-texto: oklch(0.16 0.01 270);
+  --escuro-erro: oklch(0.7 0.18 25);
+  --escuro-erro-texto: oklch(0.14 0.01 270);
+
   --radius: 1rem;
+}
 
-  /* Dark premium base (Apple Music / Sonos inspired) */
-  --background: oklch(0.13 0.012 270);          /* #0B0B0F */
-  --foreground: oklch(1 0 0);                   /* #FFFFFF */
+/* --- Tema claro (padrão) ------------------------------------------------ */
+:root {
+  color-scheme: light;
 
-  --card: oklch(0.16 0.015 270);                /* #14141A */
-  --card-foreground: oklch(1 0 0);
-  --card-elevated: oklch(0.19 0.018 270);
+  --background: var(--claro-fundo);
+  --foreground: var(--claro-texto);
+  --card: var(--claro-superficie);
+  --card-foreground: var(--claro-texto);
+  --card-elevated: var(--claro-superficie-alta);
+  --popover: var(--claro-superficie);
+  --popover-foreground: var(--claro-texto);
+  --primary: var(--claro-primaria);
+  --primary-foreground: var(--claro-primaria-texto);
+  --accent: var(--claro-destaque);
+  --accent-foreground: var(--claro-destaque-texto);
+  --secondary: var(--claro-secundaria);
+  --secondary-foreground: var(--claro-texto);
+  --muted: var(--claro-secundaria);
+  --muted-foreground: var(--claro-texto-suave);
+  --destructive: var(--claro-erro);
+  --destructive-foreground: var(--claro-erro-texto);
+  --success: var(--claro-positivo);
+  --success-foreground: var(--claro-positivo-texto);
+  --warning: var(--claro-atencao);
+  --warning-foreground: var(--claro-atencao-texto);
+  --border: var(--claro-borda);
+  --input: var(--claro-campo);
+  --ring: var(--claro-primaria);
 
-  --popover: oklch(0.16 0.015 270);
-  --popover-foreground: oklch(1 0 0);
+  --sidebar: var(--claro-superficie);
+  --sidebar-foreground: var(--claro-texto);
+  --sidebar-primary: var(--claro-primaria);
+  --sidebar-primary-foreground: var(--claro-primaria-texto);
+  --sidebar-accent: var(--claro-secundaria);
+  --sidebar-accent-foreground: var(--claro-texto);
+  --sidebar-border: var(--claro-borda);
+  --sidebar-ring: var(--claro-primaria);
 
-  /* Brand: Mercadinho Perfeito — Azul escuro */
-  --primary: oklch(0.42 0.16 258);              /* deep blue */
-  --primary-foreground: oklch(1 0 0);
+  --gradient-brand: linear-gradient(135deg, oklch(0.52 0.18 256), oklch(0.4 0.16 268));
+  --gradient-accent: linear-gradient(135deg, oklch(0.62 0.17 55), oklch(0.52 0.19 35));
 
-  /* Accent: Laranja */
-  --accent: oklch(0.74 0.18 50);                /* warm orange */
-  --accent-foreground: oklch(0.15 0.01 270);
+  /* Sombra de cartão à moda da Apple: difusa, quase sem cor, sem contorno duro. */
+  --shadow-card: 0 1px 2px oklch(0.21 0.004 286 / 6%), 0 8px 24px -12px oklch(0.21 0.004 286 / 14%);
+  --shadow-glow-accent:
+    0 0 0 1px var(--claro-destaque), 0 12px 32px -12px oklch(0.55 0.16 48 / 35%);
 
-  --secondary: oklch(0.22 0.02 270);
-  --secondary-foreground: oklch(0.98 0 0);
+  --brilho-fundo-1: oklch(0.52 0.18 256 / 7%);
+  --brilho-fundo-2: oklch(0.55 0.16 48 / 5%);
+}
 
-  --muted: oklch(0.22 0.015 270);
-  --muted-foreground: oklch(0.72 0.012 270);    /* #A1A1AA-ish */
+/* --- Tema escuro -------------------------------------------------------- */
+/*
+ * Escrito duas vezes de propósito: uma para quem escolheu escuro na plataforma,
+ * outra para quem não escolheu nada e usa o sistema no escuro. As duas apontam
+ * para as mesmas variáveis de paleta, então não há valor duplicado.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="claro"]) {
+    color-scheme: dark;
 
-  --destructive: oklch(0.62 0.21 25);
-  --destructive-foreground: oklch(1 0 0);
+    --background: var(--escuro-fundo);
+    --foreground: var(--escuro-texto);
+    --card: var(--escuro-superficie);
+    --card-foreground: var(--escuro-texto);
+    --card-elevated: var(--escuro-superficie-alta);
+    --popover: var(--escuro-superficie);
+    --popover-foreground: var(--escuro-texto);
+    --primary: var(--escuro-primaria);
+    --primary-foreground: var(--escuro-primaria-texto);
+    --accent: var(--escuro-destaque);
+    --accent-foreground: var(--escuro-destaque-texto);
+    --secondary: var(--escuro-secundaria);
+    --secondary-foreground: var(--escuro-texto);
+    --muted: var(--escuro-secundaria);
+    --muted-foreground: var(--escuro-texto-suave);
+    --destructive: var(--escuro-erro);
+    --destructive-foreground: var(--escuro-erro-texto);
+    --success: var(--escuro-positivo);
+    --success-foreground: var(--escuro-positivo-texto);
+    --warning: var(--escuro-atencao);
+    --warning-foreground: var(--escuro-atencao-texto);
+    --border: var(--escuro-borda);
+    --input: var(--escuro-campo);
+    --ring: var(--escuro-destaque);
 
-  --success: oklch(0.72 0.17 150);
-  --success-foreground: oklch(0.12 0.01 270);
+    --sidebar: var(--escuro-fundo);
+    --sidebar-foreground: var(--escuro-texto);
+    --sidebar-primary: var(--escuro-primaria);
+    --sidebar-primary-foreground: var(--escuro-primaria-texto);
+    --sidebar-accent: var(--escuro-superficie-alta);
+    --sidebar-accent-foreground: var(--escuro-texto);
+    --sidebar-border: var(--escuro-borda);
+    --sidebar-ring: var(--escuro-destaque);
 
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.74 0.18 50 / 60%);
+    --gradient-brand: linear-gradient(135deg, oklch(0.5 0.18 258), oklch(0.34 0.15 268));
+    --gradient-accent: linear-gradient(135deg, oklch(0.8 0.17 55), oklch(0.68 0.2 35));
 
-  --sidebar: oklch(0.13 0.012 270);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(0.42 0.16 258);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.19 0.018 270);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.74 0.18 50 / 60%);
+    --shadow-card: 0 1px 0 0 oklch(1 0 0 / 5%) inset, 0 24px 48px -24px oklch(0 0 0 / 70%);
+    --shadow-glow-accent:
+      0 0 0 1px oklch(0.78 0.16 55 / 30%), 0 20px 60px -20px oklch(0.78 0.16 55 / 40%);
 
-  /* Brand gradients & shadows */
-  --gradient-brand: linear-gradient(135deg, oklch(0.42 0.16 258), oklch(0.32 0.14 268));
-  --gradient-accent: linear-gradient(135deg, oklch(0.78 0.19 55), oklch(0.66 0.21 35));
+    --brilho-fundo-1: oklch(0.5 0.18 258 / 18%);
+    --brilho-fundo-2: oklch(0.78 0.16 55 / 10%);
+  }
+}
+
+:root[data-theme="escuro"] {
+  color-scheme: dark;
+
+  --background: var(--escuro-fundo);
+  --foreground: var(--escuro-texto);
+  --card: var(--escuro-superficie);
+  --card-foreground: var(--escuro-texto);
+  --card-elevated: var(--escuro-superficie-alta);
+  --popover: var(--escuro-superficie);
+  --popover-foreground: var(--escuro-texto);
+  --primary: var(--escuro-primaria);
+  --primary-foreground: var(--escuro-primaria-texto);
+  --accent: var(--escuro-destaque);
+  --accent-foreground: var(--escuro-destaque-texto);
+  --secondary: var(--escuro-secundaria);
+  --secondary-foreground: var(--escuro-texto);
+  --muted: var(--escuro-secundaria);
+  --muted-foreground: var(--escuro-texto-suave);
+  --destructive: var(--escuro-erro);
+  --destructive-foreground: var(--escuro-erro-texto);
+  --success: var(--escuro-positivo);
+  --success-foreground: var(--escuro-positivo-texto);
+  --warning: var(--escuro-atencao);
+  --warning-foreground: var(--escuro-atencao-texto);
+  --border: var(--escuro-borda);
+  --input: var(--escuro-campo);
+  --ring: var(--escuro-destaque);
+
+  --sidebar: var(--escuro-fundo);
+  --sidebar-foreground: var(--escuro-texto);
+  --sidebar-primary: var(--escuro-primaria);
+  --sidebar-primary-foreground: var(--escuro-primaria-texto);
+  --sidebar-accent: var(--escuro-superficie-alta);
+  --sidebar-accent-foreground: var(--escuro-texto);
+  --sidebar-border: var(--escuro-borda);
+  --sidebar-ring: var(--escuro-destaque);
+
+  --gradient-brand: linear-gradient(135deg, oklch(0.5 0.18 258), oklch(0.34 0.15 268));
+  --gradient-accent: linear-gradient(135deg, oklch(0.8 0.17 55), oklch(0.68 0.2 35));
+
+  --shadow-card: 0 1px 0 0 oklch(1 0 0 / 5%) inset, 0 24px 48px -24px oklch(0 0 0 / 70%);
+  --shadow-glow-accent:
+    0 0 0 1px oklch(0.78 0.16 55 / 30%), 0 20px 60px -20px oklch(0.78 0.16 55 / 40%);
+
+  --brilho-fundo-1: oklch(0.5 0.18 258 / 18%);
+  --brilho-fundo-2: oklch(0.78 0.16 55 / 10%);
+}
+
+/* Capas e avatares: as mesmas nos dois temas, porque sempre levam texto branco. */
+:root {
   --gradient-cover-1: linear-gradient(135deg, oklch(0.55 0.22 30), oklch(0.35 0.18 280));
   --gradient-cover-2: linear-gradient(135deg, oklch(0.45 0.2 260), oklch(0.72 0.18 200));
   --gradient-cover-3: linear-gradient(135deg, oklch(0.65 0.2 80), oklch(0.4 0.22 320));
   --gradient-cover-4: linear-gradient(135deg, oklch(0.7 0.2 150), oklch(0.3 0.15 250));
-
-  --shadow-glow-accent: 0 0 0 1px oklch(0.74 0.18 50 / 25%), 0 20px 60px -20px oklch(0.74 0.18 50 / 40%);
-  --shadow-card: 0 1px 0 0 oklch(1 0 0 / 4%) inset, 0 30px 60px -30px oklch(0 0 0 / 60%);
 }
 
-/*
- * O produto é assumidamente escuro. Declarar o esquema no `:root` faz o
- * navegador desenhar em tons escuros tudo o que ele controla: seletor de
- * data/hora, lista de um `select`, barra de rolagem e — o caso que mais
- * incomoda — o preenchimento automático de login, que por padrão vem com fundo
- * claro e texto escuro, ilegível sobre o nosso fundo.
- */
-:root { color-scheme: dark; }
-.dark { color-scheme: dark; }
-
 @layer base {
-  * { border-color: var(--color-border); }
+  * {
+    border-color: var(--color-border);
+  }
 
   /* Campos não dependem de herança para a cor do texto: se algum contêiner
      definir uma cor própria, o que a pessoa digita continua legível. */
@@ -125,7 +286,7 @@
   /* O Chrome pinta o campo preenchido automaticamente e ignora
      `background-color`. A sombra interna cobre o fundo dele, e
      `-webkit-text-fill-color` é a única forma de recolorir o texto. A transição
-     absurdamente longa evita o flash claro durante o preenchimento. */
+     absurdamente longa evita o flash durante o preenchimento. */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
@@ -136,16 +297,40 @@
     box-shadow: 0 0 0 1000px var(--color-secondary) inset;
     transition: background-color 600000s 0s;
   }
-  html, body, #root { height: 100%; }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-display);
     -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.011em; /* leve aperto, como nas interfaces da Apple */
     background-image:
-      radial-gradient(1200px 600px at 80% -10%, oklch(0.42 0.16 258 / 18%), transparent 60%),
-      radial-gradient(900px 500px at -10% 110%, oklch(0.74 0.18 50 / 10%), transparent 60%);
+      radial-gradient(1200px 600px at 80% -10%, var(--brilho-fundo-1), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, var(--brilho-fundo-2), transparent 60%);
     background-attachment: fixed;
+  }
+
+  /*
+   * A troca de tema é instantânea de propósito, sem animação de cor.
+   *
+   * Transição em centenas de elementos ao mesmo tempo produz um arrasto
+   * perceptível e desigual — alguns pedaços chegam antes dos outros. Um corte
+   * seco parece mais bem-feito do que uma transição que engasga.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
@@ -158,12 +343,17 @@
 
 @utility brand-chip {
   background: var(--gradient-accent);
-  color: var(--accent-foreground);
+  color: var(--color-accent-foreground);
 }
 
 @keyframes equalizer {
-  0%, 100% { transform: scaleY(0.35); }
-  50% { transform: scaleY(1); }
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
 }
 @utility eq-bar {
   animation: equalizer 1s ease-in-out infinite;
@@ -171,8 +361,15 @@
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.55; transform: scale(0.9); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.9);
+  }
 }
 @utility live-dot {
   animation: pulse-dot 1.6s ease-in-out infinite;

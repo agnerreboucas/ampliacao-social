@@ -54,7 +54,7 @@ export function SectionCard({
               {title}
             </h2>
             {description ? (
-              <p className="mt-1 max-w-prose text-sm text-muted-foreground/80">{description}</p>
+              <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
             ) : null}
           </div>
         </div>
@@ -181,7 +181,7 @@ export type PillTone = "neutro" | "positivo" | "atencao" | "erro" | "destaque";
 const PILL_TONES: Record<PillTone, string> = {
   neutro: "bg-secondary text-muted-foreground",
   positivo: "bg-success/15 text-success",
-  atencao: "bg-amber-500/15 text-amber-400",
+  atencao: "bg-warning/15 text-warning",
   erro: "bg-destructive/15 text-destructive",
   destaque: "bg-accent/15 text-accent",
 };

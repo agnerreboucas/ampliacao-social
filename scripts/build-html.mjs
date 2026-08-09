@@ -2,6 +2,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// O mesmo script que a versão com servidor injeta no <head>. Importado daqui em
+// vez de copiado: tema resolvido de dois jeitos diferentes é tema que diverge.
+import { SCRIPT_TEMA_INICIAL } from "../src/lib/social/tema.ts";
+
 /**
  * Costura o resultado de `vite.static.config.ts` em um único arquivo HTML
  * autocontido — sem CSS, JS ou fontes externas.
@@ -56,6 +60,9 @@ const html = `<!doctype html>
     <style>
 ${css}
     </style>
+    <script>
+${SCRIPT_TEMA_INICIAL}
+    </script>
   </head>
   <body>
     <div id="root"></div>${tagDeDados}

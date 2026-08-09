@@ -18,10 +18,20 @@ import { formatCompact, formatCurrency, formatDay, formatNumber } from "@/lib/so
 import type { SeriesPoint } from "@/lib/social/analytics";
 import type { OrganicPaidSplit } from "@/lib/social/types";
 
-const ORGANIC_COLOR = "oklch(0.74 0.18 50)"; // accent
-const PAID_COLOR = "oklch(0.62 0.16 258)"; // primary
-const AXIS_COLOR = "oklch(0.72 0.012 270)";
-const GRID_COLOR = "oklch(1 0 0 / 8%)";
+/*
+ * As cores dos gráficos vêm dos mesmos tokens do resto da interface.
+ *
+ * O recharts pinta com atributos SVG, e ali `var(--cor)` funciona — o que
+ * significa que trocar o tema recolore os gráficos sem nenhum JavaScript
+ * envolvido. Fixar hexadecimais aqui deixaria eixos cinza-claro ilegíveis sobre
+ * o fundo branco do tema claro, que é exatamente o erro que se quer evitar.
+ */
+const ORGANIC_COLOR = "var(--color-accent)";
+const PAID_COLOR = "var(--color-primary)";
+const AXIS_COLOR = "var(--color-muted-foreground)";
+const GRID_COLOR = "var(--color-border)";
+/** Realce sob o cursor: o próprio texto com pouca opacidade serve nos dois temas. */
+const CURSOR_FILL = "color-mix(in oklch, var(--color-foreground) 6%, transparent)";
 
 /**
  * Recharts mede o container no cliente. Só montamos os gráficos depois da
@@ -168,7 +178,7 @@ export function ReachChart({
           tickFormatter={formatCompact}
           width={52}
         />
-        <Tooltip content={<ChartTooltip />} cursor={{ fill: "oklch(1 0 0 / 4%)" }} />
+        <Tooltip content={<ChartTooltip />} cursor={{ fill: CURSOR_FILL }} />
         <Bar dataKey="organicReach" name="Orgânico" stackId="reach" radius={[0, 0, 0, 0]}>
           {data.map((ponto) => (
             <Cell key={ponto.date} fill={ORGANIC_COLOR} fillOpacity={opacidade(ponto)} />
@@ -325,7 +335,7 @@ export function PostPerformanceChart({
               </div>
             );
           }}
-          cursor={{ fill: "oklch(1 0 0 / 4%)" }}
+          cursor={{ fill: CURSOR_FILL }}
         />
         <Bar dataKey="reach" name="Alcance" fill={ORGANIC_COLOR} radius={[4, 4, 0, 0]} />
       </BarChart>
@@ -359,7 +369,7 @@ export function ActivityChart({
           content={({ active, payload, label }) => (
             <ChartTooltip active={active} payload={payload as TooltipEntry[]} label={`${label}h`} />
           )}
-          cursor={{ fill: "oklch(1 0 0 / 4%)" }}
+          cursor={{ fill: CURSOR_FILL }}
         />
         <Bar dataKey="activity" name="Interações" fill={ORGANIC_COLOR} radius={[4, 4, 0, 0]} />
       </BarChart>
