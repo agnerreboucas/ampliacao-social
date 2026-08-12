@@ -195,6 +195,34 @@ create table if not exists atualizacoes_manuais (
 
 create index if not exists atualizacoes_por_conta_dia on atualizacoes_manuais (conta_id, data);
 
+-- Histórico de uso
+--
+-- Fica de fora de TABELAS_EM_ORDEM_DE_LIMPEZA de propósito: a regravação do
+-- estado apaga e reinsere tudo, e um histórico que o próprio sistema reescreve
+-- a cada salvamento não serve para prestar contas de nada. Aqui só se acrescenta.
+--
+-- Sem chave estrangeira para usuários e contas, também de propósito. O nome de
+-- quem agiu e o rótulo do alvo são copiados no momento do registro; amarrá-los
+-- por referência faria o histórico apagar-se junto com quem saiu da equipe —
+-- exatamente quem se quer poder auditar.
+create table if not exists historico (
+  id text primary key,
+  em timestamptz not null,
+  usuario_id text,
+  usuario_nome text not null,
+  projeto_id text,
+  projeto_nome text,
+  acao text not null,
+  alvo_id text,
+  alvo_rotulo text,
+  detalhes jsonb,
+  ip text
+);
+
+create index if not exists historico_por_data on historico (em desc);
+create index if not exists historico_por_usuario on historico (usuario_id, em desc);
+create index if not exists historico_por_acao on historico (acao, em desc);
+
 -- Evolução do esquema
 --
 -- "create table if not exists" cria a tabela nova, mas não toca em tabela que
@@ -217,6 +245,8 @@ alter table usuarios add column if not exists senha_hash text;
  * Da folha para a raiz: mesmo com `on delete cascade` declarado, apagar na
  * ordem certa mantém o comportamento previsível se alguém remover uma
  * referência do esquema no futuro.
+ *
+ * `historico` não está aqui e não deve entrar — ver o comentário da tabela.
  */
 export const TABELAS_EM_ORDEM_DE_LIMPEZA = [
   "respostas",

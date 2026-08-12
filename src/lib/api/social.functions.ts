@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
 import {
@@ -61,6 +62,11 @@ import {
   TENTATIVAS_ZERADAS,
   type Tentativas,
 } from "@/lib/social/tentativas";
+import { anotar, consultar, consultarTudo, type NovoEvento } from "@/lib/social/historico.server";
+import { ACOES_CONHECIDAS, resumirPorPessoa, type AcaoHistorico } from "@/lib/social/historico";
+import { recomendar, resumirCanais } from "@/lib/social/recomendacoes";
+import { gerarRelatorioPdf } from "@/lib/social/pdf/relatorio";
+import { paraBase64 } from "@/lib/social/pdf/documento";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
 import { CONECTORES_SOCIAIS } from "@/lib/social/windsor/windsor";
 import {
@@ -95,6 +101,7 @@ import type {
   InboxItem,
   NetworkId,
   PeriodKey,
+  PlatformUser,
   Post,
   PostFormat,
   SocialAccount,
@@ -131,6 +138,71 @@ const gravarTentativas = (chave: string, valor: Tentativas) => {
 };
 
 const esperar = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Anota uma ação no histórico já com o nome de quem agiu e o do projeto.
+ *
+ * Resolver os nomes aqui, e não na hora de ler, é o que faz o histórico
+ * continuar legível depois que a pessoa sai da equipe ou a conta é desconectada
+ * — ver a nota em `historico.ts`.
+ */
+function anotarDe(
+  usuario: PlatformUser,
+  evento: Omit<NovoEvento, "usuarioId" | "usuarioNome" | "projetoNome">,
+): void {
+  const projetoId = evento.projetoId ?? null;
+  anotar({
+    ...evento,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.name,
+    projetoId,
+    projetoNome: projetoId
+      ? (getDb().projects.find((projeto) => projeto.id === projetoId)?.name ?? null)
+      : null,
+  });
+}
+
+/** O projeto de uma conta, para o histórico não precisar recebê-lo de fora. */
+function projetoDaConta(accountId: string): string | null {
+  return getDb().accounts.find((conta) => conta.id === accountId)?.projectId ?? null;
+}
+
+/**
+ * O token do link público de um relatório.
+ *
+ * Vinha de `Math.random()`, que não é imprevisível: o gerador é semeado pelo
+ * processo e a sequência pode ser reconstruída. Como esse token é a *única*
+ * coisa entre os números do cliente e quem tentar adivinhar o endereço, ele
+ * precisa vir do gerador criptográfico — e ser longo o bastante para que
+ * tentar não valha a pena.
+ *
+ * 128 bits em base36 dão 25 caracteres. Tokens já emitidos continuam válidos;
+ * são os novos que passam a ser fortes.
+ */
+function gerarTokenDeCompartilhamento(): string {
+  const bytes = randomBytes(16);
+  let valor = 0n;
+  for (const byte of bytes) valor = (valor << 8n) | BigInt(byte);
+  return valor.toString(36).padStart(25, "0");
+}
+
+/**
+ * A legenda encurtada, para caber numa linha do histórico.
+ *
+ * Guardar a legenda inteira transformaria o registro em cópia do conteúdo; o
+ * começo basta para reconhecer de qual publicação se trata.
+ */
+function resumoDaLegenda(legenda: string): string {
+  const limpa = legenda.replace(/\s+/g, " ").trim();
+  if (!limpa) return "sem legenda";
+  return limpa.length <= 70 ? limpa : `${limpa.slice(0, 69)}…`;
+}
+
+/** Como uma conta aparece no histórico: legível sem consultar outra tabela. */
+function rotuloDaConta(accountId: string): string {
+  const conta = getDb().accounts.find((candidata) => candidata.id === accountId);
+  return conta ? `${conta.displayName} (${conta.handle})` : accountId;
+}
 
 const periodSchema = z.enum(["7d", "30d", "90d", "12m", "tudo"]).default("30d");
 // Os limites reais por rede vivem em `networks.ts` e são reportados como erros
@@ -178,6 +250,15 @@ export const autenticar = createServerFn({ method: "POST" })
 
     const recusar = (erro: string) => {
       gravarTentativas(chave, registrarErro(lerTentativas(chave), Date.now()));
+      // O e-mail tentado entra no lugar do nome: numa entrada recusada não há
+      // usuário a que se referir, e é justamente o que foi tentado que se quer
+      // ler depois. Nunca a senha — nem quando ela vem errada.
+      anotar({
+        acao: "entrada_recusada",
+        usuarioId: null,
+        usuarioNome: data.email,
+        alvoRotulo: erro,
+      });
       return { ok: false as const, erro };
     };
 
@@ -201,6 +282,7 @@ export const autenticar = createServerFn({ method: "POST" })
 
     // A partir daqui quem manda é o cookie: o navegador não escolhe mais quem é.
     await abrirSessao(user.id);
+    anotarDe(user, { acao: "entrou" });
 
     return {
       ok: true as const,
@@ -213,6 +295,10 @@ export const autenticar = createServerFn({ method: "POST" })
 
 /** Encerra a sessão do lado do servidor, apagando o cookie. */
 export const sair = createServerFn({ method: "POST" }).handler(async () => {
+  // Antes de fechar: depois, não há mais de quem registrar a saída.
+  const usuario = await usuarioAtual();
+  if (usuario) anotarDe(usuario, { acao: "saiu" });
+
   await fecharSessao();
   return { ok: true as const };
 });
@@ -287,6 +373,13 @@ export const definirSenha = createServerFn({ method: "POST" })
       };
     }
 
+    anotarDe(solicitante, {
+      acao: "senha_definida",
+      alvoId: alvo.id,
+      alvoRotulo: alvo.name,
+      detalhes: { proprio: ehOProprio ? "sim" : "não" },
+    });
+
     const gravacao = await persistir();
     return { ok: true as const, gravacao };
   });
@@ -306,13 +399,33 @@ export const atualizarUsuario = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirAdministrador();
+    const administrador = await exigirAdministrador();
     const db = getDb();
     const user = db.users.find((candidate) => candidate.id === data.userId);
     if (!user) throw new Error("Usuário não encontrado.");
+
+    const papelAntes = user.role;
+    const projetosAntes = user.projectIds.length;
     if (data.role) user.role = data.role;
     if (data.projectIds) user.projectIds = data.projectIds;
-    return { user };
+
+    anotarDe(administrador, {
+      acao: "usuario_alterado",
+      alvoId: user.id,
+      alvoRotulo: user.name,
+      detalhes: {
+        papel: papelAntes === user.role ? user.role : `${papelAntes} → ${user.role}`,
+        projetos:
+          projetosAntes === user.projectIds.length
+            ? user.projectIds.length
+            : `${projetosAntes} → ${user.projectIds.length}`,
+      },
+    });
+
+    // Sem isto, tirar o acesso de alguém valia até o próximo restart — que é o
+    // oposto do que a ação promete.
+    const gravacao = await persistir();
+    return { user, gravacao };
   });
 
 export const convidarUsuario = createServerFn({ method: "POST" })
@@ -325,7 +438,7 @@ export const convidarUsuario = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirAdministrador();
+    const administrador = await exigirAdministrador();
     const db = getDb();
     if (db.users.some((user) => user.email.toLowerCase() === data.email.toLowerCase())) {
       return { ok: false as const, erro: "Já existe um usuário com este e-mail." };
@@ -341,7 +454,16 @@ export const convidarUsuario = createServerFn({ method: "POST" })
       avatarGradient: "linear-gradient(135deg, oklch(0.6 0.18 200), oklch(0.4 0.16 280))",
     };
     db.users.push(user);
-    return { ok: true as const, user };
+
+    anotarDe(administrador, {
+      acao: "usuario_convidado",
+      alvoId: user.id,
+      alvoRotulo: `${user.name} <${user.email}>`,
+      detalhes: { papel: user.role, projetos: user.projectIds.length },
+    });
+
+    const gravacao = await persistir();
+    return { ok: true as const, user, gravacao };
   });
 
 // ---------------------------------------------------------------------------
@@ -401,7 +523,7 @@ export const conectarConta = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirProjetos(data.projectId);
+    const { usuario } = await exigirProjetos(data.projectId);
     const db = getDb();
     const duplicated = db.accounts.some(
       (account) =>
@@ -444,6 +566,14 @@ export const conectarConta = createServerFn({ method: "POST" })
       topCities: [],
     });
 
+    anotarDe(usuario, {
+      acao: "conta_conectada",
+      projetoId: account.projectId,
+      alvoId: account.id,
+      alvoRotulo: rotuloDaConta(account.id),
+      detalhes: { rede: account.networkId },
+    });
+
     return { ok: true as const, account };
   });
 
@@ -455,7 +585,7 @@ export const atualizarConexao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirConta(data.accountId);
+    const usuario = await exigirConta(data.accountId);
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
     if (!account) throw new Error("Conta não encontrada.");
@@ -479,6 +609,14 @@ export const atualizarConexao = createServerFn({ method: "POST" })
         account.adAccountConnected = true;
         break;
     }
+
+    anotarDe(usuario, {
+      acao: data.acao === "desconectar" ? "conta_desconectada" : "conexao_alterada",
+      projetoId: account.projectId,
+      alvoId: account.id,
+      alvoRotulo: rotuloDaConta(account.id),
+      detalhes: { operacao: data.acao },
+    });
 
     return { account };
   });
@@ -631,7 +769,7 @@ export const criarPublicacao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirProjetos(data.projectId);
+    const { usuario } = await exigirProjetos(data.projectId);
     await exigirContas(data.accountIds);
     const db = getDb();
     const accounts = db.accounts.filter((account) => data.accountIds.includes(account.id));
@@ -676,6 +814,15 @@ export const criarPublicacao = createServerFn({ method: "POST" })
     };
 
     db.posts.unshift(post);
+
+    anotarDe(usuario, {
+      acao: "publicacao_criada",
+      projetoId: post.projectId,
+      alvoId: post.id,
+      alvoRotulo: resumoDaLegenda(post.caption),
+      detalhes: { situacao: post.status, formato: post.format, contas: post.accountIds.length },
+    });
+
     return { ok: true as const, post, issues };
   });
 
@@ -688,7 +835,7 @@ export const atualizarPublicacao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirPublicacao(data.postId);
+    const usuario = await exigirPublicacao(data.postId);
     const db = getDb();
     const index = db.posts.findIndex((post) => post.id === data.postId);
     if (index === -1) throw new Error("Publicação não encontrada.");
@@ -729,8 +876,23 @@ export const atualizarPublicacao = createServerFn({ method: "POST" })
       }
       case "excluir":
         db.posts.splice(index, 1);
+        anotarDe(usuario, {
+          acao: "publicacao_alterada",
+          projetoId: post.projectId,
+          alvoId: post.id,
+          alvoRotulo: resumoDaLegenda(post.caption),
+          detalhes: { operacao: "excluir" },
+        });
         return { ok: true as const, post: null, issues: [] };
     }
+
+    anotarDe(usuario, {
+      acao: "publicacao_alterada",
+      projetoId: post.projectId,
+      alvoId: post.id,
+      alvoRotulo: resumoDaLegenda(post.caption),
+      detalhes: { operacao: data.acao, situacao: post.status },
+    });
 
     return { ok: true as const, post, issues: [] };
   });
@@ -761,7 +923,7 @@ export const republicarPublicacao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirPublicacao(data.postId);
+    const usuario = await exigirPublicacao(data.postId);
     const db = getDb();
     const original = db.posts.find((candidate) => candidate.id === data.postId);
     if (!original) throw new Error("Publicação não encontrada.");
@@ -822,6 +984,15 @@ export const republicarPublicacao = createServerFn({ method: "POST" })
     };
 
     db.posts.unshift(post);
+
+    anotarDe(usuario, {
+      acao: "publicacao_republicada",
+      projetoId: post.projectId,
+      alvoId: post.id,
+      alvoRotulo: resumoDaLegenda(post.caption),
+      detalhes: { original: original.id, situacao: post.status, contas: accountIds.length },
+    });
+
     return { ok: true as const, post, issues, erro: null };
   });
 
@@ -868,7 +1039,7 @@ export const criarImpulsionamento = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirConta(data.accountId);
+    const usuario = await exigirConta(data.accountId);
     await exigirPublicacao(data.postId);
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
@@ -916,18 +1087,42 @@ export const criarImpulsionamento = createServerFn({ method: "POST" })
     };
 
     db.boosts.unshift(boost);
+
+    // O valor entra no histórico porque dinheiro é a parte que alguém vai
+    // querer conferir depois, e é a que ninguém lembra de cabeça.
+    anotarDe(usuario, {
+      acao: "impulsionamento_criado",
+      projetoId: account.projectId,
+      alvoId: boost.id,
+      alvoRotulo: rotuloDaConta(account.id),
+      detalhes: {
+        objetivo: boost.objective,
+        orcamento: boost.budgetTotal,
+        dias: boost.durationDays,
+      },
+    });
+
     return { ok: true as const, boost };
   });
 
 export const encerrarImpulsionamento = createServerFn({ method: "POST" })
   .inputValidator(z.object({ boostId: z.string() }))
   .handler(async ({ data }) => {
-    await exigirImpulsionamento(data.boostId);
+    const usuario = await exigirImpulsionamento(data.boostId);
     const db = getDb();
     const boost = db.boosts.find((candidate) => candidate.id === data.boostId);
     if (!boost) throw new Error("Impulsionamento não encontrado.");
     boost.status = "encerrado";
     boost.endsAt = toDayKey(new Date());
+
+    anotarDe(usuario, {
+      acao: "impulsionamento_encerrado",
+      projetoId: projetoDaConta(boost.accountId),
+      alvoId: boost.id,
+      alvoRotulo: rotuloDaConta(boost.accountId),
+      detalhes: { investido: boost.results.spend, alcance: boost.results.reach },
+    });
+
     return { boost };
   });
 
@@ -965,7 +1160,7 @@ export const listarInbox = createServerFn({ method: "POST" })
 export const responderInbox = createServerFn({ method: "POST" })
   .inputValidator(z.object({ itemId: z.string(), texto: z.string().min(1), autor: z.string() }))
   .handler(async ({ data }) => {
-    await exigirInteracao(data.itemId);
+    const usuario = await exigirInteracao(data.itemId);
     const db = getDb();
     const item = db.inbox.find((candidate) => candidate.id === data.itemId);
     if (!item) throw new Error("Interação não encontrada.");
@@ -991,6 +1186,17 @@ export const responderInbox = createServerFn({ method: "POST" })
       sentAt: new Date().toISOString(),
     });
     item.status = "respondido";
+
+    // O texto da resposta não entra: o histórico diz que houve resposta e a
+    // quem, não repete o conteúdo da conversa.
+    anotarDe(usuario, {
+      acao: "interacao_respondida",
+      projetoId: projetoDaConta(item.accountId),
+      alvoId: item.id,
+      alvoRotulo: `${item.authorHandle} · ${rotuloDaConta(item.accountId)}`,
+      detalhes: { tipo: item.kind },
+    });
+
     return { ok: true as const, item };
   });
 
@@ -1039,7 +1245,7 @@ export const responderEmLote = createServerFn({ method: "POST" })
 
     // Uma lista de ids é um convite a misturar projetos: basta um id de outro
     // cliente no meio para vazar. Todos precisam passar pela mesma checagem.
-    await exigirContas([...new Set(selecionados.map((item) => item.accountId))]);
+    const usuario = await exigirContas([...new Set(selecionados.map((item) => item.accountId))]);
 
     const contaPorId = new Map(db.accounts.map((account) => [account.id, account]));
 
@@ -1079,6 +1285,13 @@ export const responderEmLote = createServerFn({ method: "POST" })
       enviados.push({ itemId: item.id, texto });
     }
 
+    anotarDe(usuario, {
+      acao: "resposta_em_lote",
+      projetoId: projetoDaConta(selecionados[0].accountId),
+      alvoRotulo: `${enviados.length} de ${selecionados.length} interações`,
+      detalhes: { enviados: enviados.length, ignorados: ignorados.length },
+    });
+
     return { enviados, ignorados };
   });
 
@@ -1113,7 +1326,16 @@ export const classificarPessoa = createServerFn({ method: "POST" })
       (item) => item.authorHandle === data.handle && contasPermitidas.has(item.accountId),
     );
     if (itens.length === 0) throw new Error("Pessoa não encontrada.");
+    const relacaoAnterior = itens[0].relacao;
     for (const item of itens) item.relacao = data.relacao;
+
+    anotarDe(usuario, {
+      acao: "relacao_alterada",
+      projetoId: projetoDaConta(itens[0].accountId),
+      alvoRotulo: data.handle,
+      detalhes: { de: relacaoAnterior, para: data.relacao, itens: itens.length },
+    });
+
     return { handle: data.handle, relacao: data.relacao, atualizados: itens.length };
   });
 
@@ -1144,7 +1366,8 @@ export const gerarRelatorio = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirProjetos(data.projectId);
+    const { usuario } = await exigirProjetos(data.projectId);
+    await exigirContas(data.accountIds);
     const db = getDb();
     const merged = mergeSeries(
       data.accountIds.map((id) => slicePeriod(db.metrics.get(id) ?? [], data.period as PeriodKey)),
@@ -1159,23 +1382,50 @@ export const gerarRelatorio = createServerFn({ method: "POST" })
       periodEnd: merged[merged.length - 1]?.date ?? toDayKey(new Date()),
       createdAt: new Date().toISOString(),
       createdBy: data.createdBy,
-      shareToken: Math.random().toString(36).slice(2, 12),
+      shareToken: gerarTokenDeCompartilhamento(),
       shareEnabled: false,
     };
 
     db.reports.unshift(report);
-    return { report };
+
+    anotarDe(usuario, {
+      acao: "relatorio_gerado",
+      projetoId: report.projectId,
+      alvoId: report.id,
+      alvoRotulo: report.title,
+      detalhes: {
+        periodo: `${report.periodStart} a ${report.periodEnd}`,
+        contas: report.accountIds.length,
+      },
+    });
+
+    // Relatório que some no restart não é relatório: o link compartilhado com o
+    // cliente deixaria de existir sem aviso.
+    const gravacao = await persistir();
+    return { report, gravacao };
   });
 
 export const alternarCompartilhamento = createServerFn({ method: "POST" })
   .inputValidator(z.object({ reportId: z.string(), enabled: z.boolean() }))
   .handler(async ({ data }) => {
-    await exigirRelatorio(data.reportId);
+    const usuario = await exigirRelatorio(data.reportId);
     const db = getDb();
     const report = db.reports.find((candidate) => candidate.id === data.reportId);
     if (!report) throw new Error("Relatório não encontrado.");
     report.shareEnabled = data.enabled;
-    return { report };
+
+    // Abrir um link público é a ação com maior alcance de todas as da tela:
+    // depois dela, os números do cliente estão a um endereço de distância de
+    // qualquer pessoa. Fica registrada com peso de atenção.
+    anotarDe(usuario, {
+      acao: data.enabled ? "relatorio_compartilhado" : "relatorio_fechado",
+      projetoId: report.projectId,
+      alvoId: report.id,
+      alvoRotulo: report.title,
+    });
+
+    const gravacao = await persistir();
+    return { report, gravacao };
   });
 
 /** Consumido pela página pública somente leitura — não exige sessão. */
@@ -1468,7 +1718,7 @@ export const sincronizarContaReal = createServerFn({ method: "POST" })
     z.object({ accountId: z.string(), dias: z.number().int().min(1).max(30).default(28) }),
   )
   .handler(async ({ data }) => {
-    await exigirConta(data.accountId);
+    const usuario = await exigirConta(data.accountId);
     const config = getMetaConfig();
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
@@ -1510,6 +1760,14 @@ export const sincronizarContaReal = createServerFn({ method: "POST" })
       account.lastSyncAt = new Date().toISOString();
       account.status = "ativa";
 
+      anotarDe(usuario, {
+        acao: "sincronizacao_rede",
+        projetoId: account.projectId,
+        alvoId: account.id,
+        alvoRotulo: rotuloDaConta(account.id),
+        detalhes: { dias: gravados },
+      });
+
       return { ok: true as const, dias: gravados, account };
     } catch (erro) {
       console.error(`Falha ao sincronizar ${account.id}:`, erro);
@@ -1523,7 +1781,7 @@ export const sincronizarContaReal = createServerFn({ method: "POST" })
 export const desconectarContaReal = createServerFn({ method: "POST" })
   .inputValidator(z.object({ accountId: z.string() }))
   .handler(async ({ data }) => {
-    await exigirConta(data.accountId);
+    const usuario = await exigirConta(data.accountId);
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
     if (!account) throw new Error("Conta não encontrada.");
@@ -1531,6 +1789,15 @@ export const desconectarContaReal = createServerFn({ method: "POST" })
     removerCredencial(account.id);
     account.status = "desconectada";
     account.tokenExpiresAt = null;
+
+    anotarDe(usuario, {
+      acao: "conta_desconectada",
+      projetoId: account.projectId,
+      alvoId: account.id,
+      alvoRotulo: rotuloDaConta(account.id),
+      detalhes: { credencial: "removida" },
+    });
+
     return { ok: true as const, account };
   });
 
@@ -1681,7 +1948,7 @@ export const sincronizarPagoWindsor = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirConta(data.accountId);
+    const usuario = await exigirConta(data.accountId);
     const config = getWindsorConfig();
     const db = getDb();
     const account = db.accounts.find((candidate) => candidate.id === data.accountId);
@@ -1725,6 +1992,14 @@ export const sincronizarPagoWindsor = createServerFn({ method: "POST" })
         [...porData.values()].sort((a, b) => a.date.localeCompare(b.date)),
       );
       account.lastSyncAt = new Date().toISOString();
+
+      anotarDe(usuario, {
+        acao: "sincronizacao_paga",
+        projetoId: account.projectId,
+        alvoId: account.id,
+        alvoRotulo: rotuloDaConta(account.id),
+        detalhes: { dias: dias.length, conector: data.conector },
+      });
 
       return { ok: true as const, dias: dias.length, account };
     } catch (erro) {
@@ -1806,7 +2081,7 @@ export const registrarAtualizacao = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    await exigirConta(data.accountId);
+    const usuario = await exigirConta(data.accountId);
     const db = getDb();
     const conta = db.accounts.find((candidate) => candidate.id === data.accountId);
     if (!conta) throw new Error("Conta não encontrada.");
@@ -1830,6 +2105,18 @@ export const registrarAtualizacao = createServerFn({ method: "POST" })
     );
     conta.lastSyncAt = registro.registradaEm;
 
+    anotarDe(usuario, {
+      acao: "leitura_registrada",
+      projetoId: conta.projectId,
+      alvoId: conta.id,
+      alvoRotulo: rotuloDaConta(conta.id),
+      detalhes: {
+        dia: data.date,
+        seguidores: data.valores.followers,
+        leituraDoDia: anteriores.length + 1,
+      },
+    });
+
     const gravacao = await persistir();
 
     return {
@@ -1844,8 +2131,15 @@ export const registrarAtualizacao = createServerFn({ method: "POST" })
 
 /** Devolve o arquivo inteiro para download — o que vai para o commit. */
 export const exportarDados = createServerFn({ method: "POST" }).handler(async () => {
-  await exigirAdministrador();
+  const administrador = await exigirAdministrador();
   const db = getDb();
+
+  // Exportar tira uma cópia de tudo da plataforma. Fica registrado por isso.
+  anotarDe(administrador, {
+    acao: "dados_exportados",
+    detalhes: { contas: db.accounts.length, projetos: db.projects.length },
+  });
+
   return { conteudo: serializar(db), nome: nomeDoArquivo() };
 });
 
@@ -1853,10 +2147,16 @@ export const exportarDados = createServerFn({ method: "POST" }).handler(async ()
 export const importarDados = createServerFn({ method: "POST" })
   .inputValidator(z.object({ conteudo: z.string().min(1) }))
   .handler(async ({ data }) => {
-    await exigirAdministrador();
+    const administrador = await exigirAdministrador();
     try {
       const estado = desserializar(data.conteudo);
       substituirEstado(estado);
+
+      anotarDe(administrador, {
+        acao: "dados_importados",
+        detalhes: { contas: estado.accounts.length, atualizacoes: estado.atualizacoes.length },
+      });
+
       const gravacao = await persistir();
       return {
         ok: true as const,
@@ -1995,3 +2295,256 @@ export const detalharPeriodo = createServerFn({ method: "POST" })
 export const situacaoAcesso = createServerFn({ method: "POST" }).handler(async () => {
   return { demonstracao: !usandoBanco() };
 });
+
+// ---------------------------------------------------------------------------
+// Histórico de uso
+// ---------------------------------------------------------------------------
+
+/**
+ * O histórico de uso da plataforma — só para administrador.
+ *
+ * A restrição não é zelo excessivo: a lista diz de onde cada pessoa entrou e a
+ * que horas, o que é dado sobre gente, não sobre campanha. Quem precisa dela
+ * para prestar contas é quem responde pela conta.
+ */
+export const listarHistorico = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      usuarioId: z.string().optional(),
+      acao: z.enum(ACOES_CONHECIDAS as [string, ...string[]]).optional(),
+      area: z.string().optional(),
+      projetoId: z.string().optional(),
+      de: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      ate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      busca: z.string().optional(),
+      limite: z.number().int().min(1).max(500).default(100),
+      deslocamento: z.number().int().min(0).default(0),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await exigirAdministrador();
+    const db = getDb();
+
+    const pagina = await consultar({
+      ...data,
+      acao: data.acao as AcaoHistorico | undefined,
+    });
+
+    return {
+      ...pagina,
+      // Para montar os filtros da tela sem uma segunda ida ao servidor.
+      pessoas: db.users.map((usuario) => ({ id: usuario.id, nome: usuario.name })),
+      projetos: db.projects.map((projeto) => ({ id: projeto.id, nome: projeto.name })),
+    };
+  });
+
+/**
+ * Quem usou a plataforma, e quanto, no período pedido.
+ *
+ * Responde a pergunta que a lista cronológica responde mal: "quem está
+ * usando isto?". O resumo é calculado sobre o conjunto inteiro do período, não
+ * sobre a página visível — um ranking de uma fatia arbitrária enganaria.
+ */
+export const resumoDeUso = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      de: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      ate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      projetoId: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await exigirAdministrador();
+    const eventos = await consultarTudo(data);
+    return { pessoas: resumirPorPessoa(eventos), eventos: eventos.length };
+  });
+
+// ---------------------------------------------------------------------------
+// Painel geral e recomendações
+// ---------------------------------------------------------------------------
+
+/**
+ * O quadro completo: cada canal lado a lado, os totais e o que os números
+ * sugerem fazer.
+ *
+ * O painel existente soma os canais e responde "como vamos?". Este compara os
+ * canais entre si e responde "qual está puxando e qual está pesando?" — que é
+ * a pergunta que leva a uma decisão sobre onde colocar esforço.
+ */
+export const obterPainelGeral = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string().optional(), period: periodSchema }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const period = data.period as PeriodKey;
+
+    const metricasPorConta = new Map(
+      contas.map((conta) => [conta.id, db.metrics.get(conta.id) ?? []]),
+    );
+    const idsDasContas = new Set(contas.map((conta) => conta.id));
+
+    const posts = db.posts.filter((post) => post.accountIds.some((id) => idsDasContas.has(id)));
+
+    const pendentes = db.inbox.filter(
+      (item) => item.status === "pendente" && idsDasContas.has(item.accountId),
+    );
+    // A mais antiga sem resposta: é dela que sai o "há quantas horas".
+    const maisAntiga = pendentes.reduce<string | null>(
+      (antiga, item) => (antiga === null || item.receivedAt < antiga ? item.receivedAt : antiga),
+      null,
+    );
+
+    const canais = resumirCanais(contas, metricasPorConta, period);
+    const consolidado = mergeSeries(
+      contas.map((conta) => slicePeriod(metricasPorConta.get(conta.id) ?? [], period)),
+    );
+
+    const recomendacoes = recomendar({
+      contas,
+      metricasPorConta,
+      posts,
+      period,
+      interacoesPendentes: pendentes.length,
+      pendenteMaisAntigaEm: maisAntiga,
+      agoraMs: Date.now(),
+    });
+
+    // Agrupamento por rede: uma campanha com três perfis no Instagram quer
+    // saber como vai "o Instagram", não cada perfil isolado.
+    const porRede = new Map<NetworkId, { alcance: number; seguidores: number; contas: number }>();
+    for (const canal of canais) {
+      const atual = porRede.get(canal.networkId) ?? { alcance: 0, seguidores: 0, contas: 0 };
+      atual.alcance += canal.alcance;
+      atual.seguidores += canal.seguidores;
+      atual.contas += 1;
+      porRede.set(canal.networkId, atual);
+    }
+
+    return {
+      period,
+      canais,
+      redes: [...porRede.entries()]
+        .map(([networkId, dados]) => ({ networkId, ...dados }))
+        .sort((a, b) => b.alcance - a.alcance),
+      totais: summarize(consolidado, period),
+      split: splitOrganicPaid(consolidado),
+      serie: buildSeries(consolidado),
+      recomendacoes,
+      publicacoesNoPeriodo: posts.filter((post) => post.status === "publicado").length,
+      interacoesPendentes: pendentes.length,
+    };
+  });
+
+/**
+ * O relatório em PDF, pronto para baixar.
+ *
+ * Gerado no servidor, onde os números já estão, e devolvido em base64 para a
+ * tela montar o arquivo. O gerador em si é um módulo puro — roda igual aqui e
+ * no navegador —, o que mantém o HTML único da demonstração capaz de produzir
+ * o mesmo documento sem servidor nenhum.
+ */
+export const gerarPdfDoRelatorio = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ reportId: z.string() }))
+  .handler(async ({ data }) => {
+    const usuario = await exigirRelatorio(data.reportId);
+    const db = getDb();
+
+    const report = db.reports.find((candidato) => candidato.id === data.reportId)!;
+    const projeto = db.projects.find((candidato) => candidato.id === report.projectId);
+    const contas = db.accounts.filter((conta) => report.accountIds.includes(conta.id));
+
+    // O recorte é o período gravado no relatório, não um período qualquer: é o
+    // que faz o PDF de hoje continuar dizendo o mesmo daqui a um mês.
+    const doPeriodo = (accountId: string) =>
+      (db.metrics.get(accountId) ?? []).filter(
+        (dia) => dia.date >= report.periodStart && dia.date <= report.periodEnd,
+      );
+
+    const metricasPorConta = new Map(contas.map((conta) => [conta.id, doPeriodo(conta.id)]));
+    const consolidado = mergeSeries(contas.map((conta) => doPeriodo(conta.id)));
+    const idsDasContas = new Set(contas.map((conta) => conta.id));
+
+    const posts = db.posts.filter(
+      (post) =>
+        post.accountIds.some((id) => idsDasContas.has(id)) &&
+        post.publishedAt !== null &&
+        post.publishedAt.slice(0, 10) >= report.periodStart &&
+        post.publishedAt.slice(0, 10) <= report.periodEnd,
+    );
+
+    const pendentes = db.inbox.filter(
+      (item) => item.status === "pendente" && idsDasContas.has(item.accountId),
+    );
+
+    const temLeituraManual = db.atualizacoes.some((registro) =>
+      idsDasContas.has(registro.accountId),
+    );
+    const temSincronizacao = contas.some((conta) => conta.origem === "oauth");
+    const origens = [
+      temLeituraManual ? "leitura manual" : null,
+      temSincronizacao ? "API da rede" : null,
+    ].filter(Boolean);
+
+    const bytes = gerarRelatorioPdf({
+      titulo: report.title,
+      projeto: projeto?.name ?? "Projeto",
+      cliente: projeto?.client ?? "",
+      periodoInicio: report.periodStart,
+      periodoFim: report.periodEnd,
+      geradoEm: new Date(),
+      geradoPor: usuario.name,
+      resumo: summarize(consolidado, "tudo"),
+      split: splitOrganicPaid(consolidado),
+      canais: resumirCanais(contas, metricasPorConta, "tudo"),
+      serie: consolidado,
+      recomendacoes: recomendar({
+        contas,
+        metricasPorConta,
+        posts,
+        period: "tudo",
+        interacoesPendentes: pendentes.length,
+        pendenteMaisAntigaEm: pendentes.reduce<string | null>(
+          (antiga, item) =>
+            antiga === null || item.receivedAt < antiga ? item.receivedAt : antiga,
+          null,
+        ),
+        agoraMs: Date.now(),
+      }),
+      publicacoes: posts.length,
+      origemDosDados: origens.length > 0 ? origens.join(" e ") : "dados de demonstração",
+    });
+
+    return {
+      base64: paraBase64(bytes),
+      nome: `${nomeDeArquivo(report.title)}-${report.periodEnd}.pdf`,
+      bytes: bytes.length,
+    };
+  });
+
+/** Um título vira nome de arquivo: sem acento, sem espaço, sem surpresa. */
+function nomeDeArquivo(titulo: string): string {
+  return (
+    titulo
+      .normalize("NFD")
+      // A faixa dos acentos combinantes, escrita por código: um intervalo com
+      // os caracteres literais é invisível no editor e some numa cópia
+      // desatenta.
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase()
+      .slice(0, 60) || "relatorio"
+  );
+}

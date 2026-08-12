@@ -1,11 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Copy, ExternalLink, FileBarChart, Link2Off, LoaderCircle, Share2 } from "lucide-react";
+import {
+  Copy,
+  Download,
+  ExternalLink,
+  FileBarChart,
+  Link2Off,
+  LoaderCircle,
+  Share2,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import {
   alternarCompartilhamento,
+  gerarPdfDoRelatorio,
   gerarRelatorio,
   listarRelatorios,
 } from "@/lib/api/social.functions";
@@ -74,6 +83,32 @@ function RelatoriosPage() {
           : "Link público desativado.",
       );
     },
+  });
+
+  /**
+   * Baixa o PDF do relatório.
+   *
+   * O arquivo chega em base64 e vira um blob aqui: é o caminho que funciona
+   * igual no aplicativo e no HTML único, sem depender de um endereço de
+   * download no servidor.
+   */
+  const baixarPdf = useMutation({
+    mutationFn: (reportId: string) => gerarPdfDoRelatorio({ data: { reportId } }),
+    onSuccess: (resultado) => {
+      const binario = atob(resultado.base64);
+      const bytes = Uint8Array.from(binario, (caractere) => caractere.charCodeAt(0));
+      const endereco = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+
+      const link = document.createElement("a");
+      link.href = endereco;
+      link.download = resultado.nome;
+      link.click();
+      // Sem revogar, o blob fica na memória da aba até ela fechar.
+      URL.revokeObjectURL(endereco);
+
+      toast.success("PDF gerado.");
+    },
+    onError: () => toast.error("Não foi possível gerar o PDF."),
   });
 
   const shareUrl = (token: string) =>
@@ -211,6 +246,19 @@ function RelatoriosPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => baixarPdf.mutate(report.id)}
+                      disabled={baixarPdf.isPending}
+                      className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-secondary disabled:opacity-60"
+                    >
+                      {baixarPdf.isPending && baixarPdf.variables === report.id ? (
+                        <LoaderCircle className="size-3.5 animate-spin" />
+                      ) : (
+                        <Download className="size-3.5" />
+                      )}
+                      Baixar PDF
+                    </button>
                     <button
                       type="button"
                       onClick={() =>

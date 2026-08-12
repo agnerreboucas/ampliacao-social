@@ -27,12 +27,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, formatRelative } from "@/lib/social/format";
+import { Restrito } from "@/components/social/restrito";
 import { useSocialSession } from "@/lib/social/session";
 import type { Project, UserRole } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/social/equipe")({
-  component: EquipePage,
+  component: () => (
+    <Restrito ability="admin" titulo="A tela de Equipe é restrita a administradores">
+      <EquipePage />
+    </Restrito>
+  ),
 });
 
 const ROLES = Object.keys(ROLE_LABELS) as UserRole[];

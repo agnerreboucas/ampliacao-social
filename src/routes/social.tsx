@@ -4,11 +4,13 @@ import {
   BarChart3,
   ChevronDown,
   FileBarChart,
+  History,
   LayoutDashboard,
   Link2,
   LogOut,
   MessagesSquare,
   PencilLine,
+  Radar,
   Rocket,
   Send,
   Users,
@@ -86,6 +88,7 @@ function SocialShell() {
   const role = session.user.role;
   const items: NavItem[] = [
     { to: "/social", label: "Painel", icon: LayoutDashboard, ability: "metricas" },
+    { to: "/social/geral", label: "Visão geral", icon: Radar, ability: "metricas" },
     { to: "/social/contas", label: "Contas", icon: Link2, ability: "metricas" },
     { to: "/social/atualizar", label: "Atualizar números", icon: PencilLine, ability: "metricas" },
     { to: "/social/publicacoes", label: "Publicações", icon: Send, ability: "publicar" },
@@ -99,6 +102,7 @@ function SocialShell() {
     },
     { to: "/social/relatorios", label: "Relatórios", icon: FileBarChart, ability: "relatorios" },
     { to: "/social/equipe", label: "Equipe", icon: Users, ability: "admin" },
+    { to: "/social/historico", label: "Histórico", icon: History, ability: "admin" },
   ].filter((item) => can(role, item.ability));
 
   return (
