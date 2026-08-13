@@ -136,11 +136,22 @@ if ((await campoEmail.count()) === 0) {
     .first()
     .click();
   await pagina.waitForTimeout(2500);
-  const circulos = await pagina.locator("svg circle").count();
-  if (circulos >= 645) {
-    console.log(`✓ o mapa desenhou ${circulos} pontos`);
+  // Territórios, não pontos: o mapa desenha um caminho por município, e o
+  // recorte metropolitano repete os mesmos 645 num segundo SVG.
+  const territorios = await pagina.locator("svg path").count();
+  if (territorios >= 1290) {
+    console.log(`✓ o mapa desenhou ${territorios} territórios (estado + recorte)`);
   } else {
-    erros.push(`o mapa desenhou ${circulos} pontos, e o estado tem 645 municípios`);
+    erros.push(`o mapa desenhou ${territorios} territórios; esperava 1290 ou mais`);
+  }
+
+  await pagina.locator('path:has(title:text-is("Sorocaba"))').first().click({ force: true });
+  await pagina.waitForTimeout(2500);
+  const dossie = await pagina.locator("body").innerText();
+  if (/Vizinhos/i.test(dossie) && /Custo por mil/i.test(dossie)) {
+    console.log("✓ clicar no território abre o dossiê do município");
+  } else {
+    erros.push("clicar no território não abriu o dossiê do município");
   }
 
   await pagina

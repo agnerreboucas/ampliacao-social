@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  BOOST_OBJECTIVE_LABELS,
   BOOST_STATUS_LABELS,
   formatCompact,
   formatCurrency,
@@ -252,7 +253,7 @@ function BoostRow({
             <StatusPill tone={BOOST_TONES[boost.status]}>
               {BOOST_STATUS_LABELS[boost.status]}
             </StatusPill>
-            <span className="text-sm font-medium capitalize">{boost.objective}</span>
+            <span className="text-sm font-medium">{BOOST_OBJECTIVE_LABELS[boost.objective]}</span>
             {account ? <NetworkChip networkId={account.networkId} /> : null}
           </div>
           <p className="mt-1.5 line-clamp-1 text-sm text-muted-foreground">

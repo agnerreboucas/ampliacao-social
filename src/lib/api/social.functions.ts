@@ -81,7 +81,7 @@ import {
   perfilDoPublico,
 } from "@/lib/social/publico";
 import { medirCobertura, montarMapa } from "@/lib/social/mapa";
-import { conversasPorPeca, indexarOrigens } from "@/lib/social/rastreio";
+import { conversasPorPeca, indexarOrigens, resumirPeca } from "@/lib/social/rastreio";
 import { acharMunicipio } from "@/lib/social/municipios-sp";
 import { gerarRelatorioPdf } from "@/lib/social/pdf/relatorio";
 import { paraBase64 } from "@/lib/social/pdf/documento";
@@ -2989,5 +2989,114 @@ export const obterMapaSP = createServerFn({ method: "POST" })
           ),
         ),
       ],
+    };
+  });
+
+/**
+ * Tudo o que a plataforma sabe sobre um município.
+ *
+ * Existe separada de `obterMapaSP` porque é o oposto dela: o mapa precisa de
+ * pouco sobre 645 municípios, e isto precisa de muito sobre um. Juntar as duas
+ * mandaria a peça, o impulsionamento e o vizinho de cada município do estado
+ * para o navegador toda vez que alguém abrisse a tela.
+ */
+export const detalharMunicipio = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      projectId: z.string().optional(),
+      codigo: z.string(),
+      prioritarios: z.number().int().min(5).max(200).default(50),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const ids = new Set(contas.map((conta) => conta.id));
+
+    const impulsionamentos = db.boosts.filter((boost) => ids.has(boost.accountId));
+    const pontos = montarMapa(impulsionamentos);
+    const ponto = pontos.find((candidato) => candidato.municipio.codigo === data.codigo);
+    if (!ponto) throw new Error("Município não encontrado.");
+
+    // Os anúncios que miraram este município, com a fatia que coube a ele.
+    const entregas = impulsionamentos
+      .map((boost) => {
+        const alvos = boost.audience.locations
+          .map((local) => acharMunicipio(local))
+          .filter((municipio): municipio is NonNullable<typeof municipio> => municipio !== null);
+        if (!alvos.some((alvo) => alvo.codigo === data.codigo)) return null;
+
+        const fatia = 1 / alvos.length;
+        const post = db.posts.find((candidato) => candidato.id === boost.postId);
+
+        return {
+          boostId: boost.id,
+          objetivo: boost.objective,
+          status: boost.status,
+          comecouEm: boost.startedAt,
+          terminaEm: boost.endsAt,
+          /** Quantas cidades dividiram este anúncio — muda como ler o número. */
+          cidadesNoAnuncio: alvos.length,
+          outrasCidades: alvos
+            .filter((alvo) => alvo.codigo !== data.codigo)
+            .map((alvo) => alvo.nome),
+          alcance: Math.round(boost.results.reach * fatia),
+          investido: Math.round(boost.results.spend * fatia * 100) / 100,
+          peca: post ? resumirPeca(post, contas) : null,
+        };
+      })
+      .filter((entrega): entrega is NonNullable<typeof entrega> => entrega !== null)
+      .sort((a, b) => b.alcance - a.alcance);
+
+    const prioritarios = pontos
+      .filter((candidato) => candidato.municipio.posicao !== null)
+      .sort((a, b) => (a.municipio.posicao ?? 0) - (b.municipio.posicao ?? 0))
+      .slice(0, data.prioritarios);
+    const ehPrioritario = prioritarios.some(
+      (candidato) => candidato.municipio.codigo === data.codigo,
+    );
+
+    /**
+     * Os vizinhos, pela distância entre as sedes.
+     *
+     * Serve à decisão seguinte à leitura do mapa: se aqui deu certo, o vizinho
+     * é o próximo candidato natural — e saber se ele já recebeu entrega evita
+     * repetir onde já se está.
+     */
+    const vizinhos = pontos
+      .filter((candidato) => candidato.municipio.codigo !== data.codigo)
+      .map((candidato) => ({
+        candidato,
+        distancia: Math.hypot(
+          candidato.municipio.lat - ponto.municipio.lat,
+          candidato.municipio.lon - ponto.municipio.lon,
+        ),
+      }))
+      .sort((a, b) => a.distancia - b.distancia)
+      .slice(0, 6)
+      .map(({ candidato }) => ({
+        codigo: candidato.municipio.codigo,
+        nome: candidato.municipio.nome,
+        populacao: candidato.municipio.populacao,
+        posicao: candidato.municipio.posicao,
+        alcance: candidato.alcance,
+      }));
+
+    return {
+      ponto,
+      entregas,
+      vizinhos,
+      ehPrioritario,
+      /**
+       * Alcance sobre a população do município.
+       *
+       * Nulo quando a população não está na matriz. É a razão que diz se o
+       * investimento foi denso ou espalhado: 5.000 pessoas em Vinhedo é outra
+       * coisa que 5.000 em Guarulhos.
+       */
+      penetracao:
+        ponto.municipio.populacao && ponto.municipio.populacao > 0
+          ? ponto.alcance / ponto.municipio.populacao
+          : null,
     };
   });

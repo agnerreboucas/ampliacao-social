@@ -3,10 +3,18 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { Info, Map as MapaIcone, Target, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
-import { obterMapaSP } from "@/lib/api/social.functions";
+import { detalharMunicipio, obterMapaSP } from "@/lib/api/social.functions";
 import { MapaDeSaoPaulo, type Visao } from "@/components/social/mapa-sp";
 import { LoadingBlock, PageHeader, SectionCard, StatusPill } from "@/components/social/primitives";
-import { formatCompact, formatCurrency, formatNumber, formatPercent } from "@/lib/social/format";
+import {
+  BOOST_OBJECTIVE_LABELS,
+  formatCompact,
+  formatCurrency,
+  formatDay,
+  formatNumber,
+  formatPercent,
+} from "@/lib/social/format";
+import { diaPorExtenso, nomeDoFormato } from "@/lib/social/rastreio";
 import { useSocialSession } from "@/lib/social/session";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +48,6 @@ function MapaPage() {
   });
 
   const dado = dados.data;
-  const escolhido = dado?.pontos.find((ponto) => ponto.municipio.codigo === selecionado) ?? null;
 
   return (
     <div className="space-y-6">
@@ -133,79 +140,14 @@ function MapaPage() {
             />
           </SectionCard>
 
-          {escolhido ? (
-            <SectionCard title={escolhido.municipio.nome} icon={Target}>
-              <div className="grid gap-4 md:grid-cols-2">
-                {escolhido.ehCapital ? (
-                  // Sem esta linha o card da capital é uma coluna de traços, e
-                  // traço lido sem explicação vira "faltou dado".
-                  <p className="text-sm text-muted-foreground md:col-span-2">
-                    A capital é a referência do índice, não um item dele: o IPS mede a semelhança de
-                    cada município <em>com ela</em>. Por isso não tem nota, posição nem distância —
-                    a matriz de origem a deixa de fora.
-                  </p>
-                ) : null}
-                <dl className="space-y-2 text-sm">
-                  <Linha
-                    rotulo="Posição no IPS"
-                    valor={
-                      escolhido.municipio.posicao
-                        ? `${escolhido.municipio.posicao}º de 600`
-                        : "fora do ranking"
-                    }
-                  />
-                  <Linha rotulo="Nota do IPS" valor={escolhido.municipio.ips?.toString() ?? "—"} />
-                  <Linha
-                    rotulo="População de referência"
-                    valor={
-                      escolhido.municipio.populacao
-                        ? formatNumber(escolhido.municipio.populacao)
-                        : "—"
-                    }
-                  />
-                  <Linha
-                    rotulo="Distância da capital"
-                    valor={escolhido.municipio.km ? `${escolhido.municipio.km} km` : "—"}
-                  />
-                  <Linha rotulo="IDHM 2010" valor={escolhido.municipio.idhm?.toString() ?? "—"} />
-                </dl>
-
-                <div className="rounded-xl border border-border p-4">
-                  <h3 className="text-sm font-medium">O que a campanha entregou aqui</h3>
-                  {escolhido.alcance === 0 ? (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Nenhum anúncio foi segmentado para este município.
-                      {escolhido.municipio.posicao && escolhido.municipio.posicao <= prioritarios
-                        ? " Ele está entre os prioritários — é um vazio que vale corrigir."
-                        : ""}
-                    </p>
-                  ) : (
-                    <dl className="mt-2 space-y-2 text-sm">
-                      <Linha rotulo="Pessoas alcançadas" valor={formatNumber(escolhido.alcance)} />
-                      <Linha rotulo="Investido" valor={formatCurrency(escolhido.investido)} />
-                      <Linha
-                        rotulo="Custo por mil"
-                        valor={
-                          escolhido.alcance > 0
-                            ? formatCurrency((escolhido.investido / escolhido.alcance) * 1000)
-                            : "—"
-                        }
-                      />
-                      <Linha
-                        rotulo="Publicações entregues"
-                        valor={String(escolhido.publicacoes.length)}
-                      />
-                    </dl>
-                  )}
-                  <Link
-                    to="/social/impulsionamentos"
-                    className="mt-3 inline-block text-xs text-accent hover:underline"
-                  >
-                    Ver os impulsionamentos →
-                  </Link>
-                </div>
-              </div>
-            </SectionCard>
+          {selecionado ? (
+            <DetalheDoMunicipio
+              codigo={selecionado}
+              projectId={projectId}
+              prioritarios={prioritarios}
+              onFechar={() => setSelecionado(null)}
+              onIrPara={setSelecionado}
+            />
           ) : null}
 
           <SectionCard
@@ -269,6 +211,14 @@ function MapaPage() {
                 serve para priorizar onde olhar, não para concluir nada sozinho.
               </p>
               <p>
+                <strong className="text-foreground">O que os territórios são.</strong> Cada área é a
+                região do estado mais próxima daquela sede municipal — não é o limite oficial do
+                IBGE. A diferença é pequena onde as cidades se distribuem com regularidade e maior
+                onde um município é comprido ou tem a sede num canto. Serve para ler alcance e
+                prioridade no espaço; não serve para medir área nem para dizer por onde passa uma
+                divisa.
+              </p>
+              <p>
                 <strong className="text-foreground">De onde vem o alcance.</strong> Da segmentação
                 dos anúncios, que é o dado firme. Quando um anúncio mira várias cidades, o alcance é
                 dividido igualmente entre elas — a rede não devolve a quebra por município.
@@ -327,5 +277,230 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
       <dt className="text-muted-foreground">{rotulo}</dt>
       <dd className="shrink-0 font-medium tabular-nums">{valor}</dd>
     </div>
+  );
+}
+
+/**
+ * O dossiê de um município.
+ *
+ * A tela antiga mostrava cinco linhas e um total. Cinco linhas dizem que o
+ * município existe; não dizem o que fazer com ele. Aqui a leitura é a de quem
+ * vai decidir o próximo anúncio: o que já chegou, por qual peça, dividido com
+ * quais outras cidades, quanto custou por pessoa, e quais vizinhos ainda estão
+ * vazios.
+ *
+ * Busca própria, sob demanda. Mandar isto sobre os 645 municípios junto com o
+ * mapa encheria a resposta com dado que ninguém vai olhar.
+ */
+function DetalheDoMunicipio({
+  codigo,
+  projectId,
+  prioritarios,
+  onFechar,
+  onIrPara,
+}: {
+  codigo: string;
+  projectId: string | null;
+  prioritarios: number;
+  onFechar: () => void;
+  onIrPara: (codigo: string) => void;
+}) {
+  const detalhe = useQuery({
+    queryKey: ["social", "municipio", projectId, codigo, prioritarios],
+    queryFn: () =>
+      detalharMunicipio({
+        data: { projectId: projectId ?? undefined, codigo, prioritarios },
+      }),
+    enabled: Boolean(projectId),
+  });
+
+  const dado = detalhe.data;
+  const municipio = dado?.ponto.municipio;
+
+  return (
+    <SectionCard
+      title={municipio?.nome ?? "Município"}
+      description={
+        municipio
+          ? [
+              municipio.posicao ? `${municipio.posicao}º no IPS` : "fora do ranking do IPS",
+              municipio.populacao ? `${formatNumber(municipio.populacao)} habitantes` : null,
+              municipio.km !== null ? `${municipio.km} km da capital` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : undefined
+      }
+      icon={Target}
+      actions={
+        <button
+          type="button"
+          onClick={onFechar}
+          className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary"
+        >
+          Fechar
+        </button>
+      }
+    >
+      {detalhe.isPending || !dado || !municipio ? (
+        <LoadingBlock rows={3} />
+      ) : (
+        <div className="space-y-5">
+          {dado.ponto.ehCapital ? (
+            <p className="text-sm text-muted-foreground">
+              A capital é a referência do índice, não um item dele: o IPS mede a semelhança de cada
+              município <em>com ela</em>. Por isso não tem nota, posição nem distância — a matriz de
+              origem a deixa de fora.
+            </p>
+          ) : null}
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Indicador
+              rotulo="Alcançados aqui"
+              valor={dado.ponto.alcance > 0 ? formatNumber(dado.ponto.alcance) : "ninguém"}
+              nota={
+                dado.penetracao !== null && dado.ponto.alcance > 0
+                  ? `${formatPercent(dado.penetracao * 100, 1)} da população`
+                  : "por anúncio segmentado"
+              }
+              alerta={dado.ponto.alcance === 0 && dado.ehPrioritario}
+            />
+            <Indicador
+              rotulo="Investido"
+              valor={formatCurrency(dado.ponto.investido)}
+              nota={`${dado.entregas.length} ${dado.entregas.length === 1 ? "anúncio" : "anúncios"}`}
+            />
+            <Indicador
+              rotulo="Custo por mil"
+              valor={
+                dado.ponto.alcance > 0
+                  ? formatCurrency((dado.ponto.investido / dado.ponto.alcance) * 1000)
+                  : "—"
+              }
+              nota="quanto custou chegar a mil pessoas"
+            />
+            <Indicador
+              rotulo="Nota do IPS"
+              valor={municipio.ips?.toString() ?? "—"}
+              nota={municipio.idhm ? `IDHM 2010: ${municipio.idhm}` : "fora da matriz"}
+            />
+          </div>
+
+          {dado.ponto.alcance === 0 ? (
+            <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+              <p>
+                <strong className="text-foreground">Nenhum anúncio foi segmentado para cá.</strong>{" "}
+                {dado.ehPrioritario
+                  ? `Este município está entre os ${prioritarios} prioritários — é um vazio que vale corrigir.`
+                  : "Ele não está entre os prioritários do recorte atual."}
+              </p>
+              <Link
+                to="/social/impulsionamentos"
+                className="mt-2 inline-block text-xs text-accent hover:underline"
+              >
+                Criar um impulsionamento para {municipio.nome} →
+              </Link>
+            </div>
+          ) : (
+            <div>
+              <h3 className="text-sm font-medium">O que chegou aqui</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Cada anúncio, a peça que ele levou e quanto coube a este município.
+              </p>
+              <ul className="mt-2.5 space-y-2">
+                {dado.entregas.map((entrega) => (
+                  <li key={entrega.boostId} className="rounded-xl border border-border p-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <StatusPill tone={entrega.status === "ativo" ? "positivo" : "neutro"}>
+                          {entrega.status}
+                        </StatusPill>
+                        <span className="text-sm">{BOOST_OBJECTIVE_LABELS[entrega.objetivo]}</span>
+                        {entrega.peca ? (
+                          <span className="text-xs text-muted-foreground">
+                            · {nomeDoFormato(entrega.peca.formato)}
+                            {diaPorExtenso(entrega.peca.publicadoEm)
+                              ? ` de ${diaPorExtenso(entrega.peca.publicadoEm)}`
+                              : ""}
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 text-sm font-medium tabular-nums">
+                        {formatNumber(entrega.alcance)} pessoas
+                      </span>
+                    </div>
+
+                    {entrega.peca ? (
+                      <Link
+                        to="/social/publicacao/$postId"
+                        params={{ postId: entrega.peca.id }}
+                        className="mt-1.5 block truncate text-sm text-accent hover:underline"
+                      >
+                        {entrega.peca.trecho}
+                      </Link>
+                    ) : null}
+
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      {formatCurrency(entrega.investido)} · de {formatDay(entrega.comecouEm)} a{" "}
+                      {formatDay(entrega.terminaEm)}
+                      {entrega.cidadesNoAnuncio > 1 ? (
+                        <>
+                          {" "}
+                          · dividido com {entrega.outrasCidades.slice(0, 3).join(", ")}
+                          {entrega.outrasCidades.length > 3
+                            ? ` e mais ${entrega.outrasCidades.length - 3}`
+                            : ""}
+                        </>
+                      ) : (
+                        " · anúncio só para este município"
+                      )}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+
+              {dado.entregas.some((entrega) => entrega.cidadesNoAnuncio > 1) ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Quando um anúncio mira várias cidades, o alcance é dividido igualmente entre elas
+                  — a rede não devolve a quebra por município. O número acima é essa divisão, não
+                  uma medição.
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          <div>
+            <h3 className="text-sm font-medium">Vizinhos</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Os mais próximos por sede. Se aqui funcionou, é para onde a campanha se espalha
+              naturalmente.
+            </p>
+            <ul className="mt-2.5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {dado.vizinhos.map((vizinho) => (
+                <li key={vizinho.codigo}>
+                  <button
+                    type="button"
+                    onClick={() => onIrPara(vizinho.codigo)}
+                    className="flex w-full min-w-0 items-center gap-2.5 rounded-lg border border-border p-2.5 text-left transition-colors hover:bg-secondary/50"
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-2 shrink-0 rounded-full",
+                        vizinho.alcance > 0 ? "bg-[#0d9488]" : "bg-muted-foreground/40",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm">{vizinho.nome}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {vizinho.alcance > 0 ? formatCompact(vizinho.alcance) : "vazio"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }

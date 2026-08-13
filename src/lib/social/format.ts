@@ -1,4 +1,4 @@
-import type { PeriodKey, PostStatus, BoostStatus, UserRole } from "./types";
+import type { BoostObjective, BoostStatus, PeriodKey, PostStatus, UserRole } from "./types";
 
 const numberFormatter = new Intl.NumberFormat("pt-BR");
 const compactFormatter = new Intl.NumberFormat("pt-BR", {
@@ -73,6 +73,20 @@ export const POST_STATUS_LABELS: Record<PostStatus, string> = {
   agendado: "Agendado",
   publicado: "Publicado",
   falhou: "Falhou",
+};
+
+/**
+ * O objetivo do anúncio escrito como se lê.
+ *
+ * O valor guardado é um identificador sem acento, e `capitalize` no CSS
+ * transformava "trafego" em "Trafego" na tela — errado em português e visível
+ * para qualquer pessoa que ler.
+ */
+export const BOOST_OBJECTIVE_LABELS: Record<BoostObjective, string> = {
+  alcance: "Alcance",
+  engajamento: "Engajamento",
+  trafego: "Tráfego",
+  mensagens: "Mensagens",
 };
 
 export const BOOST_STATUS_LABELS: Record<BoostStatus, string> = {
