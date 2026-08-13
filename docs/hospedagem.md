@@ -124,3 +124,41 @@ leituras diárias de uma campanha não se recupera digitando de novo.
 6. Entrar, criar o projeto do cliente e cadastrar as contas dele.
 7. Importar o histórico pela tela de Importar histórico.
 8. Ligar o backup do banco.
+
+## Contêiner
+
+O `Dockerfile` na raiz existe para a aplicação rodar igual em qualquer lugar que
+aceite uma imagem — Render, Railway, Fly, Cloud Run, Coolify, ou um Docker
+Compose no servidor da agência:
+
+```bash
+docker build -t ampliacao-social .
+docker run -p 3000:3000 -e DATABASE_URL=... -e SESSION_SECRET=... ampliacao-social
+```
+
+A imagem final leva só o pacote gerado e o driver do Postgres; TypeScript,
+ESLint e Playwright ficam para trás. O processo não roda como root.
+
+> Este Dockerfile foi escrito e revisado, mas **não foi construído** — o
+> ambiente onde a plataforma foi desenvolvida não tem Docker disponível. Espere
+> precisar de um ajuste na primeira construção.
+
+## Teste de saúde
+
+`GET /api/saude` responde:
+
+```json
+{ "ok": true, "banco": "ok", "emPeHa": 24 }
+```
+
+Ele **toca o banco de verdade**, com uma consulta trivial. Isso é de propósito:
+a página inicial responde 200 mesmo com o banco fora do ar, porque a tela de
+entrada é renderizada de qualquer jeito — um teste de saúde que aponta para ela
+manteria no ar uma instalação quebrada.
+
+Quando o banco não responde, o endereço devolve **503**, que é o código que faz
+o provedor tirar a instância do balanceamento. Verificado nos dois sentidos: com
+o banco derrubado devolveu 503 com a aplicação de pé, e voltou a 200 quando o
+banco subiu, sem reiniciar o processo.
+
+Configure este caminho como _health check_ no painel do provedor.

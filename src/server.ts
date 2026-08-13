@@ -40,6 +40,14 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      // Antes de qualquer coisa: o teste de saúde não pode depender do
+      // roteador nem da renderização. Se a aplicação estiver com problema
+      // justamente aí, é quando o provedor mais precisa da resposta.
+      if (new URL(request.url).pathname === "/api/saude") {
+        const { respostaDeSaude } = await import("./lib/saude.server");
+        return await respostaDeSaude();
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

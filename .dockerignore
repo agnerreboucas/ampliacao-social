@@ -1,0 +1,20 @@
+# O que não entra na imagem.
+#
+# Além de deixar o build mais rápido, isto é uma barreira contra vazamento: um
+# .env copiado para dentro da imagem viaja com ela para o registro do provedor.
+.env
+.env.*
+!.env.example
+
+node_modules
+dist
+.output
+.git
+.github
+
+# Testes e ferramentas de desenvolvimento não têm o que fazer em produção.
+scripts
+docs
+*.test.ts
+*.md
+!README.md
