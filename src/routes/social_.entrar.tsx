@@ -1,12 +1,14 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { BarChart3, LoaderCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { autenticar, situacaoAcesso } from "@/lib/api/social.functions";
 import { InlineError } from "@/components/social/primitives";
 import { SeletorTema } from "@/components/social/seletor-tema";
+import { ROLE_LABELS } from "@/lib/social/format";
 import { SocialSessionProvider, useSocialSession } from "@/lib/social/session";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/social_/entrar")({
   head: () => ({
@@ -28,8 +30,8 @@ export const Route = createFileRoute("/social_/entrar")({
 function LoginScreen() {
   const navigate = useNavigate();
   const { ready, session, signIn } = useSocialSession();
-  const [email, setEmail] = useState("ana@ampliacao.com.br");
-  const [senha, setSenha] = useState("ampliacao");
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,6 +42,24 @@ function LoginScreen() {
 
   // Saber se há banco muda o que a tela promete a quem vai digitar.
   const acesso = useQuery({ queryKey: ["social", "acesso"], queryFn: () => situacaoAcesso() });
+  // `useMemo` porque a lista entra nas dependências de um efeito: recriar o
+  // array vazio a cada render faria o efeito rodar sempre.
+  const usuariosDemo = useMemo(() => acesso.data?.usuarios ?? [], [acesso.data]);
+
+  /**
+   * Em demonstração, o primeiro usuário já vem preenchido.
+   *
+   * Quem abre o arquivo quer ver a plataforma, não descobrir uma credencial. E
+   * o preenchimento vem dos dados carregados — antes era um e-mail escrito na
+   * tela, que ficou apontando para um usuário inexistente no dia em que os
+   * dados mudaram.
+   */
+  useEffect(() => {
+    if (email === "" && usuariosDemo.length > 0) {
+      setEmail(usuariosDemo[0].email);
+      setSenha("demonstracao");
+    }
+  }, [email, usuariosDemo]);
 
   const login = useMutation({
     mutationFn: (input: { email: string; senha: string }) => autenticar({ data: input }),
@@ -140,16 +160,40 @@ function LoginScreen() {
             </>
           ) : (
             <>
-              Ambiente de demonstração: entre com um dos usuários cadastrados (
-              <span className="text-foreground">ana@</span>,{" "}
-              <span className="text-foreground">bruno@</span>,{" "}
-              <span className="text-foreground">carla@</span> ou{" "}
-              <span className="text-foreground">diego@</span>
-              ampliacao.com.br) e qualquer senha. Cada usuário tem um papel diferente e vê um
-              conjunto distinto de módulos.
+              Ambiente de demonstração: <strong className="text-foreground">qualquer senha</strong>{" "}
+              entra. Cada usuário tem um papel diferente e vê um conjunto distinto de módulos —
+              toque em um para preencher.
             </>
           )}
         </p>
+
+        {usuariosDemo.length > 0 ? (
+          <ul className="mt-2.5 space-y-1.5">
+            {usuariosDemo.map((usuario) => (
+              <li key={usuario.email}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail(usuario.email);
+                    setSenha("demonstracao");
+                    setErro(null);
+                  }}
+                  className={cn(
+                    "flex w-full items-baseline gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+                    email === usuario.email
+                      ? "border-accent bg-accent/5"
+                      : "border-border hover:bg-secondary/60",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate text-foreground">{usuario.email}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {ROLE_LABELS[usuario.papel]}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         <div className="mt-6 flex justify-center">
           <SeletorTema />

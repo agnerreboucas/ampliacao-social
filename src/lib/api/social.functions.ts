@@ -2375,7 +2375,29 @@ export const detalharPeriodo = createServerFn({ method: "POST" })
  * primeira tela é o pior lugar para uma instrução errada.
  */
 export const situacaoAcesso = createServerFn({ method: "POST" }).handler(async () => {
-  return { demonstracao: !usandoBanco() };
+  const demonstracao = !usandoBanco();
+
+  /**
+   * Em demonstração, a tela mostra com quem dá para entrar.
+   *
+   * A lista sai dos dados carregados, e não de nomes escritos na tela. Já foi
+   * escrita à mão uma vez: quando os dados passaram a ser os da campanha, a
+   * tela continuou oferecendo quatro usuários que não existiam mais, e não
+   * havia como entrar.
+   *
+   * **Só em demonstração.** Com banco configurado isto devolve lista vazia —
+   * ali os e-mails são de gente de verdade, e uma tela de login que enumera
+   * quem tem conta entrega metade da credencial a quem só passou por ela.
+   */
+  const usuarios = demonstracao
+    ? getDb().users.map((usuario) => ({
+        email: usuario.email,
+        nome: usuario.name,
+        papel: usuario.role,
+      }))
+    : [];
+
+  return { demonstracao, usuarios };
 });
 
 // ---------------------------------------------------------------------------
