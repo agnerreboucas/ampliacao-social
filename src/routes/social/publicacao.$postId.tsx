@@ -6,6 +6,7 @@ import {
   Bookmark,
   ChevronLeft,
   ChevronRight,
+  CirclePlay,
   Clock,
   Eye,
   Heart,
@@ -47,7 +48,7 @@ import {
   formatRelative,
 } from "@/lib/social/format";
 import { useSocialSession } from "@/lib/social/session";
-import type { Post, PostStatus, SocialAccount } from "@/lib/social/types";
+import type { Post, PostFormat, PostStatus, SocialAccount } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/social/publicacao/$postId")({
@@ -678,7 +679,7 @@ function VisualizadorDeMidia({
   tamanhoMb,
   duracao,
 }: {
-  formato: "imagem" | "carrossel" | "video";
+  formato: PostFormat;
   itens: string[];
   proporcao: string;
   gradiente: string;
@@ -686,7 +687,14 @@ function VisualizadorDeMidia({
   duracao?: number;
 }) {
   const [atual, setAtual] = useState(0);
-  const Icone = formato === "video" ? Video : formato === "carrossel" ? Images : ImageIcon;
+  const Icone =
+    formato === "video"
+      ? Video
+      : formato === "story"
+        ? CirclePlay
+        : formato === "carrossel"
+          ? Images
+          : ImageIcon;
 
   return (
     <SectionCard title="Mídia" icon={Icone}>

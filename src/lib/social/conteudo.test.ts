@@ -33,6 +33,10 @@ function post(parcial: Partial<Post> = {}): Post {
   };
 }
 
+function metricas(reach: number, likes: number, comments: number): Post["metrics"] {
+  return { reach, impressions: Math.round(reach * 1.2), likes, comments, shares: 0, saves: 0 };
+}
+
 function comAlcance(alcance: number, parcial: Partial<Post> = {}): Post {
   return post({ ...parcial, metrics: { ...post().metrics!, reach: alcance } });
 }
@@ -258,6 +262,42 @@ test("'sem assunto' nunca vira destaque", () => {
   const { positivos } = destaques(pecas);
   assert.equal(
     positivos.some((grupo) => grupo.chave === SEM_ASSUNTO),
+    false,
+  );
+});
+
+// --- Story não é comparável com o feed ---------------------------------------
+
+test("story recebe ressalva no agrupamento por formato", () => {
+  const pecas = avaliarPecas([
+    post({ id: "a", format: "story", metrics: metricas(1000, 0, 10) }),
+    post({ id: "b", format: "story", metrics: metricas(900, 0, 8) }),
+    post({ id: "c", format: "video", metrics: metricas(5000, 300, 40) }),
+  ]);
+
+  const formatos = porFormato(pecas);
+  const story = formatos.find((grupo) => grupo.chave === "story")!;
+  const video = formatos.find((grupo) => grupo.chave === "video")!;
+
+  assert.ok(story.ressalva, "story precisa dizer por que não se compara");
+  assert.equal(video.ressalva, undefined, "formato de feed não carrega ressalva");
+});
+
+test("story nunca vira destaque negativo", () => {
+  // O alcance de story é limitado a quem abre stories; chamá-lo de pior formato
+  // é concluir sobre uma comparação que a rede não permite fazer.
+  const pecas = avaliarPecas([
+    post({ id: "s1", format: "story", metrics: metricas(400, 0, 4) }),
+    post({ id: "s2", format: "story", metrics: metricas(380, 0, 3) }),
+    post({ id: "s3", format: "story", metrics: metricas(420, 0, 5) }),
+    post({ id: "v1", format: "video", metrics: metricas(6000, 300, 40) }),
+    post({ id: "v2", format: "video", metrics: metricas(6200, 320, 44) }),
+    post({ id: "v3", format: "video", metrics: metricas(5800, 280, 38) }),
+  ]);
+
+  const { negativos } = destaques(pecas);
+  assert.equal(
+    negativos.some((grupo) => grupo.chave === "story"),
     false,
   );
 });

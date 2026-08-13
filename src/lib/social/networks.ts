@@ -38,7 +38,7 @@ export const NETWORKS: Record<NetworkId, NetworkCapabilities> = {
     label: "Instagram",
     color: "oklch(0.65 0.22 5)",
     gradient: "linear-gradient(135deg, oklch(0.72 0.2 60), oklch(0.55 0.25 350))",
-    formats: ["imagem", "carrossel", "video"],
+    formats: ["imagem", "carrossel", "video", "story"],
     captionMaxLength: 2200,
     carousel: { min: 2, max: 10 },
     video: { minSeconds: 3, maxSeconds: 900, maxFileMb: 1024 },
@@ -55,7 +55,7 @@ export const NETWORKS: Record<NetworkId, NetworkCapabilities> = {
     label: "Facebook",
     color: "oklch(0.58 0.18 258)",
     gradient: "linear-gradient(135deg, oklch(0.6 0.19 258), oklch(0.4 0.16 265))",
-    formats: ["imagem", "carrossel", "video"],
+    formats: ["imagem", "carrossel", "video", "story"],
     captionMaxLength: 63206,
     carousel: { min: 2, max: 10 },
     video: { minSeconds: 1, maxSeconds: 14400, maxFileMb: 4096 },
@@ -169,6 +169,21 @@ export function validateDraft(draft: PostDraftInput, accounts: SocialAccount[]):
       push(
         "erro",
         `Proporção ${draft.media.aspectRatio} não é suportada pelo ${net.label} (aceita ${net.aspectRatios.join(", ")}).`,
+      );
+    }
+
+    if (draft.format === "story") {
+      // Story fora de 9:16 é publicado com barras, o que na prática significa
+      // recortado ou com faixa preta — a rede aceita, e quem vê estranha.
+      if (draft.media.aspectRatio !== "9:16") {
+        push(
+          "aviso",
+          `Story em ${draft.media.aspectRatio} aparece com bordas no ${net.label}; 9:16 ocupa a tela inteira.`,
+        );
+      }
+      push(
+        "aviso",
+        `Story expira em 24 horas no ${net.label}. Depois disso os números param de crescer e a peça sai do ar.`,
       );
     }
 

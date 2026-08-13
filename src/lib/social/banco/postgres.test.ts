@@ -60,6 +60,7 @@ const publico: AudienceInsight = {
   topInteractors: [{ handle: "@a", name: "A", interactions: 9, avatarGradient: "g" }],
   activityByHour: [{ hour: 9, activity: 12 }],
   topCities: [{ city: "São Paulo", share: 0.4 }],
+  demografia: [],
 };
 
 const post: Post = {

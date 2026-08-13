@@ -90,6 +90,9 @@ if ((await campoEmail.count()) === 0) {
     ["Importar histórico", /Traga a planilha|Escolha a conta/i],
     ["Conteúdo", /Peça a peça|Por formato/i],
     ["Público", /Cidades|De onde vêm estes números/i],
+    // As duas telas que o estado de São Paulo pediu: o mapa precisa desenhar os
+    // 645 municípios e a pirâmide precisa separar homens de mulheres.
+    ["Mapa de SP", /645 munic|Onde a campanha/i],
     ["Publicações", /publica/i],
     ["Relacionamento", /interaç|coment/i],
     ["Relatórios", /relat/i],
@@ -113,6 +116,50 @@ if ((await campoEmail.count()) === 0) {
   }
 
   // --- O histórico registrou a navegação de verdade? ------------------------
+
+  // --- O que só existe nas telas novas --------------------------------------
+
+  await pagina
+    .getByRole("link", { name: /^Público/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2500);
+  const publico = await pagina.locator("body").innerText();
+  if (/HOMENS/i.test(publico) && /MULHERES/i.test(publico)) {
+    console.log("✓ a pirâmide de gênero e idade desenhou");
+  } else {
+    erros.push("a pirâmide de gênero e idade não apareceu em Público");
+  }
+
+  await pagina
+    .getByRole("link", { name: /^Mapa de SP/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2500);
+  const circulos = await pagina.locator("svg circle").count();
+  if (circulos >= 645) {
+    console.log(`✓ o mapa desenhou ${circulos} pontos`);
+  } else {
+    erros.push(`o mapa desenhou ${circulos} pontos, e o estado tem 645 municípios`);
+  }
+
+  await pagina
+    .getByRole("link", { name: /^Relacionamento/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2500);
+  const conversa = await pagina.locator("body").innerText();
+  if (/de alcance/i.test(conversa) && /(Imagem|Vídeo|Carrossel|Story)/.test(conversa)) {
+    console.log("✓ a conversa mostra a publicação que a originou");
+  } else {
+    erros.push("a conversa não mostra a peça de origem");
+  }
+
+  await pagina
+    .getByRole("link", { name: /^Histórico/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2500);
 
   const historico = await pagina.locator("body").innerText();
   if (/entrou na plataforma/i.test(historico)) {

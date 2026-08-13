@@ -3,6 +3,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   CalendarDays,
   CheckCircle2,
+  CirclePlay,
   Images,
   Image as ImageIcon,
   ListChecks,
@@ -44,7 +45,12 @@ const STATUS_TONES: Record<PostStatus, PillTone> = {
   falhou: "erro",
 };
 
-const FORMAT_ICONS = { imagem: ImageIcon, carrossel: Images, video: Video } as const;
+const FORMAT_ICONS = {
+  imagem: ImageIcon,
+  carrossel: Images,
+  video: Video,
+  story: CirclePlay,
+} as const;
 
 const FILTERS: { id: "fila" | "publicado" | "todos"; label: string }[] = [
   { id: "fila", label: "Fila de produção" },

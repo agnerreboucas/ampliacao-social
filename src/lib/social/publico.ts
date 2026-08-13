@@ -1,4 +1,13 @@
-import type { AudienceInsight, Boost, InboxItem, RelacaoPessoa } from "./types";
+import { FAIXAS_ETARIAS } from "./types.ts";
+import type {
+  AudienceInsight,
+  Boost,
+  CelulaDemografica,
+  FaixaEtaria,
+  Genero,
+  InboxItem,
+  RelacaoPessoa,
+} from "./types";
 
 /**
  * Perfil do público: quem é, onde está, e como se comporta.
@@ -246,3 +255,128 @@ export function perfilDoPublico(inbox: InboxItem[]): PerfilDoPublico {
     interacoesPorPessoa: porPessoa.size > 0 ? inbox.length / porPessoa.size : 0,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Gênero e idade
+// ---------------------------------------------------------------------------
+
+/**
+ * O retrato demográfico do público, somado entre as contas.
+ *
+ * Serve à pergunta de campanha — "estou falando com homem ou com mulher, e de
+ * que idade?" — com a ressalva que a torna utilizável: **isto é sobre
+ * seguidores, não sobre quem foi alcançado.** As duas coisas divergem muito
+ * quando há mídia paga, e tratá-las como a mesma leva a segmentar para o
+ * público que já se tem em vez do que se quer conquistar.
+ *
+ * Somar contas diferentes é aceitável e impreciso ao mesmo tempo: quem segue no
+ * Instagram e no Facebook é contado duas vezes, porque nenhuma rede diz quem é
+ * a mesma pessoa. O total declara isso em `contas`, para quem lê saber que é
+ * soma de perfis e não de gente.
+ */
+export type DemografiaDoPublico = {
+  /** Total de seguidores somados nas células — não é gente distinta. */
+  pessoas: number;
+  /** Quantas contas contribuíram com dado demográfico. */
+  contas: number;
+  porGenero: { genero: Genero; pessoas: number; fatia: number }[];
+  /** Cruzamento gênero × faixa, na ordem das faixas da rede. */
+  piramide: {
+    faixa: FaixaEtaria;
+    feminino: number;
+    masculino: number;
+    naoInformado: number;
+    total: number;
+    /** Fatia desta faixa no total, de 0 a 1. */
+    fatia: number;
+  }[];
+  /** A faixa com mais gente, ou `null` quando não há dado. */
+  faixaDominante: FaixaEtaria | null;
+  /**
+   * Motivos pelos quais faltam contas, agrupados.
+   *
+   * Agrupado e não uma linha por conta: duas contas sem o dado pelo mesmo
+   * motivo produzem a mesma frase duas vezes, e frase repetida na tela lê como
+   * defeito.
+   */
+  semDado: { motivo: string; contas: number }[];
+};
+
+export function demografiaDoPublico(perfis: AudienceInsight[]): DemografiaDoPublico {
+  /**
+   * O campo pode não existir.
+   *
+   * `demografia` entrou depois no formato, e o estado da plataforma é gravado
+   * como JSON: um perfil salvo por uma versão anterior volta do banco sem o
+   * campo. Ler `.length` direto ali derruba a tela inteira de Público na
+   * primeira atualização de versão — que é justamente quando ninguém está
+   * olhando.
+   */
+  const celulasDe = (perfil: AudienceInsight): CelulaDemografica[] => perfil.demografia ?? [];
+
+  const comDado = perfis.filter((perfil) => perfil.available && celulasDe(perfil).length > 0);
+
+  const motivos = new Map<string, number>();
+  for (const perfil of perfis) {
+    if (perfil.available && celulasDe(perfil).length > 0) continue;
+    const motivo =
+      perfil.unavailableReason ?? "A rede só devolve o perfil demográfico acima de cem seguidores.";
+    motivos.set(motivo, (motivos.get(motivo) ?? 0) + 1);
+  }
+  const semDado = [...motivos.entries()].map(([motivo, contas]) => ({ motivo, contas }));
+
+  const chave = (genero: Genero, faixa: FaixaEtaria) => `${genero}|${faixa}`;
+  const soma = new Map<string, number>();
+  for (const perfil of comDado) {
+    for (const celula of celulasDe(perfil)) {
+      const atual = soma.get(chave(celula.genero, celula.faixa)) ?? 0;
+      soma.set(chave(celula.genero, celula.faixa), atual + celula.pessoas);
+    }
+  }
+
+  const pessoas = [...soma.values()].reduce((total, valor) => total + valor, 0);
+  const de = (genero: Genero, faixa: FaixaEtaria) => soma.get(chave(genero, faixa)) ?? 0;
+
+  const porGenero = (["feminino", "masculino", "nao_informado"] as Genero[])
+    .map((genero) => {
+      const total = FAIXAS_ETARIAS.reduce((acumulado, faixa) => acumulado + de(genero, faixa), 0);
+      return { genero, pessoas: total, fatia: pessoas > 0 ? total / pessoas : 0 };
+    })
+    // Gênero sem ninguém não vira linha de zero na legenda.
+    .filter((linha) => linha.pessoas > 0);
+
+  const piramide = FAIXAS_ETARIAS.map((faixa) => {
+    const feminino = de("feminino", faixa);
+    const masculino = de("masculino", faixa);
+    const naoInformado = de("nao_informado", faixa);
+    const total = feminino + masculino + naoInformado;
+    return {
+      faixa,
+      feminino,
+      masculino,
+      naoInformado,
+      total,
+      fatia: pessoas > 0 ? total / pessoas : 0,
+    };
+  });
+
+  const maior = piramide.reduce(
+    (campea, atual) => (atual.total > campea.total ? atual : campea),
+    piramide[0],
+  );
+
+  return {
+    pessoas,
+    contas: comDado.length,
+    porGenero,
+    piramide,
+    faixaDominante: maior.total > 0 ? maior.faixa : null,
+    semDado,
+  };
+}
+
+export const NOME_DO_GENERO: Record<Genero, string> = {
+  feminino: "Mulheres",
+  masculino: "Homens",
+  nao_informado: "Não informado",
+};

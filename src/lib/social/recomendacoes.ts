@@ -1,6 +1,7 @@
 // A extensão é explícita porque os testes rodam com o "type stripping" do Node,
 // que resolve módulos como ESM e não adivinha o ".ts" — ao contrário do bundler.
 import { PERIOD_DAYS, slicePeriod, summarize } from "./analytics.ts";
+import { FORMATOS_DE_FEED } from "./types.ts";
 import type { DailyMetric, NetworkId, PeriodKey, Post, SocialAccount } from "./types";
 
 /**
@@ -120,6 +121,13 @@ function formatoQueRende(entrada: EntradaRecomendacoes): Recomendacao[] {
 
   const porFormato = new Map<string, { total: number; alcance: number }>();
   for (const post of publicados) {
+    // Story fica de fora desta comparação de propósito. O alcance dele é
+    // limitado a quem abre stories, e o de um post de feed não é: dizer
+    // "publique menos story porque alcança menos" seria comparar coisas que a
+    // rede nem entrega para o mesmo conjunto de pessoas. O story aparece na
+    // tela de Conteúdo, com a ressalva — só não vira ordem de pauta.
+    if (!FORMATOS_DE_FEED.includes(post.format)) continue;
+
     const atual = porFormato.get(post.format) ?? { total: 0, alcance: 0 };
     atual.total += 1;
     atual.alcance += post.metrics!.reach;
@@ -360,6 +368,7 @@ const NOMES_DE_FORMATO: Record<string, string> = {
   imagem: "Imagem",
   carrossel: "Carrossel",
   video: "Vídeo",
+  story: "Story",
 };
 
 function nomeDoFormato(formato: string): string {

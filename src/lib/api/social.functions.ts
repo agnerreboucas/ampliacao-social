@@ -74,7 +74,15 @@ import {
   porFaixaDeHorario,
   porFormato,
 } from "@/lib/social/conteudo";
-import { cidadesAlcancadas, normalizarCidade, perfilDoPublico } from "@/lib/social/publico";
+import {
+  cidadesAlcancadas,
+  demografiaDoPublico,
+  normalizarCidade,
+  perfilDoPublico,
+} from "@/lib/social/publico";
+import { medirCobertura, montarMapa } from "@/lib/social/mapa";
+import { conversasPorPeca, indexarOrigens } from "@/lib/social/rastreio";
+import { acharMunicipio } from "@/lib/social/municipios-sp";
 import { gerarRelatorioPdf } from "@/lib/social/pdf/relatorio";
 import { paraBase64 } from "@/lib/social/pdf/documento";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
@@ -578,6 +586,7 @@ export const conectarConta = createServerFn({ method: "POST" })
       topInteractors: [],
       activityByHour: [],
       topCities: [],
+      demografia: [],
     });
 
     anotarDe(usuario, {
@@ -783,7 +792,7 @@ export const obterConta = createServerFn({ method: "POST" })
 const draftSchema = z.object({
   projectId: z.string(),
   accountIds: z.array(z.string()).min(1),
-  format: z.enum(["imagem", "carrossel", "video"]),
+  format: z.enum(["imagem", "carrossel", "video", "story"]),
   caption: z.string().max(63206),
   media: mediaSchema,
 });
@@ -793,7 +802,7 @@ export const validarRascunho = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       accountIds: z.array(z.string()),
-      format: z.enum(["imagem", "carrossel", "video"]),
+      format: z.enum(["imagem", "carrossel", "video", "story"]),
       caption: z.string(),
       media: mediaSchema,
     }),
@@ -1220,6 +1229,12 @@ export const listarInbox = createServerFn({ method: "POST" })
       users: db.users,
       novoId: novo && accountIds.has(novo.accountId) ? novo.id : null,
       pendentes: items.filter((item) => item.status === "pendente").length,
+      // A origem de cada conversa vai junto: sem isto a tela mostra um
+      // identificador cru ("post-4") onde deveria dizer que foi o vídeo de
+      // quinta às 19h. Vai indexado por publicação, e não repetido em cada
+      // interação, porque várias conversas nascem da mesma peça.
+      origens: indexarOrigens(items, db.posts, accounts),
+      conversasPorPeca: conversasPorPeca(items),
     };
   });
 
@@ -1750,6 +1765,7 @@ export const conectarContasEscolhidas = createServerFn({ method: "POST" })
           topInteractors: [],
           activityByHour: [],
           topCities: [],
+          demografia: [],
         });
       }
 
@@ -2852,6 +2868,7 @@ export const analisarPublico = createServerFn({ method: "POST" })
       period,
       cidades: cidadesAlcancadas(impulsionamentos, perfis, seguidoresTotais),
       perfil: perfilDoPublico(inbox),
+      demografia: demografiaDoPublico(perfis),
       seguidoresTotais,
       // Quais redes de fato reportam perfil de público — o resto da tela
       // depende disso para não prometer o que não tem.
@@ -2912,4 +2929,43 @@ export const detalharCidade = createServerFn({ method: "POST" })
       .filter((item): item is NonNullable<typeof item> => item !== null);
 
     return { cidade: cidade ?? null, publicacoes, nome: normalizarCidade(data.cidade) };
+  });
+
+/**
+ * O mapa do estado de São Paulo e a cobertura da campanha nele.
+ *
+ * Cruza os 645 municípios da matriz do IPS com a segmentação dos anúncios. O
+ * alcance por município vem do contrato do anúncio — é o dado firme —, e o que
+ * ficou sem entrega aparece como vazio no mapa, que é a informação que leva a
+ * mudar a segmentação.
+ */
+export const obterMapaSP = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      projectId: z.string().optional(),
+      /** Quantos do topo do ranking contam como prioritários. */
+      prioritarios: z.number().int().min(5).max(200).default(50),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const ids = new Set(contas.map((conta) => conta.id));
+
+    const impulsionamentos = db.boosts.filter((boost) => ids.has(boost.accountId));
+    const pontos = montarMapa(impulsionamentos);
+
+    return {
+      pontos,
+      cobertura: medirCobertura(pontos, data.prioritarios),
+      // Segmentações que não casaram com nenhum município do estado: é o que
+      // explica um alcance que existe na campanha e não aparece no mapa.
+      foraDoEstado: [
+        ...new Set(
+          impulsionamentos.flatMap((boost) =>
+            boost.audience.locations.filter((local) => !acharMunicipio(local)),
+          ),
+        ),
+      ],
+    };
   });

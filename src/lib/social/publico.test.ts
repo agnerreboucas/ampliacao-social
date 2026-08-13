@@ -1,8 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { cidadesAlcancadas, normalizarCidade, perfilDoPublico } from "./publico.ts";
-import type { AudienceInsight, Boost, InboxItem } from "./types.ts";
+import {
+  cidadesAlcancadas,
+  demografiaDoPublico,
+  normalizarCidade,
+  perfilDoPublico,
+} from "./publico.ts";
+import type {
+  AudienceInsight,
+  Boost,
+  CelulaDemografica,
+  FaixaEtaria,
+  Genero,
+  InboxItem,
+} from "./types.ts";
 
 function boost(parcial: Partial<Boost> = {}): Boost {
   return {
@@ -29,6 +41,7 @@ function perfil(cidades: { city: string; share: number }[]): AudienceInsight {
     topInteractors: [],
     activityByHour: [],
     topCities: cidades,
+    demografia: [],
   };
 }
 
@@ -209,4 +222,143 @@ test("quem mais interage vem primeiro", () => {
   ]);
 
   assert.equal(perfilDoTeste.maisAtivas[0].handle, "@muito");
+});
+
+// --- Gênero e idade ----------------------------------------------------------
+
+function celulas(linhas: [Genero, FaixaEtaria, number][]): CelulaDemografica[] {
+  return linhas.map(([genero, faixa, pessoas]) => ({ genero, faixa, pessoas }));
+}
+
+function perfilDemografico(demografia: CelulaDemografica[]): AudienceInsight {
+  return {
+    available: true,
+    newFollowers: 0,
+    unfollows: 0,
+    topInteractors: [],
+    activityByHour: [],
+    topCities: [],
+    demografia,
+  };
+}
+
+test("soma o mesmo recorte entre contas diferentes", () => {
+  const demo = demografiaDoPublico([
+    perfilDemografico(celulas([["feminino", "25-34", 100]])),
+    perfilDemografico(celulas([["feminino", "25-34", 50]])),
+  ]);
+
+  assert.equal(demo.pessoas, 150);
+  assert.equal(demo.contas, 2);
+  assert.equal(demo.piramide.find((linha) => linha.faixa === "25-34")?.feminino, 150);
+});
+
+test("as fatias por gênero somam o todo, incluindo quem não informou", () => {
+  // Diluir o "não informado" nos outros dois inflaria os dois e apagaria a
+  // informação de que parte do público não declarou.
+  const demo = demografiaDoPublico([
+    perfilDemografico(
+      celulas([
+        ["feminino", "25-34", 60],
+        ["masculino", "25-34", 30],
+        ["nao_informado", "25-34", 10],
+      ]),
+    ),
+  ]);
+
+  assert.equal(demo.pessoas, 100);
+  assert.deepEqual(
+    demo.porGenero.map((linha) => [linha.genero, linha.fatia]),
+    [
+      ["feminino", 0.6],
+      ["masculino", 0.3],
+      ["nao_informado", 0.1],
+    ],
+  );
+});
+
+test("gênero sem ninguém não vira linha de zero", () => {
+  const demo = demografiaDoPublico([perfilDemografico(celulas([["feminino", "18-24", 40]]))]);
+
+  assert.deepEqual(
+    demo.porGenero.map((linha) => linha.genero),
+    ["feminino"],
+  );
+});
+
+test("a pirâmide tem todas as faixas, mesmo as vazias", () => {
+  // Faixa vazia é informação: mostra onde a base não está.
+  const demo = demografiaDoPublico([perfilDemografico(celulas([["masculino", "45-54", 10]]))]);
+
+  assert.equal(demo.piramide.length, 7);
+  assert.equal(demo.piramide[0].faixa, "13-17");
+  assert.equal(demo.piramide[0].total, 0);
+});
+
+test("a faixa dominante é a de mais gente", () => {
+  const demo = demografiaDoPublico([
+    perfilDemografico(
+      celulas([
+        ["feminino", "18-24", 30],
+        ["masculino", "35-44", 90],
+      ]),
+    ),
+  ]);
+
+  assert.equal(demo.faixaDominante, "35-44");
+});
+
+test("sem dado nenhum, não há faixa dominante nem divisão por zero", () => {
+  const demo = demografiaDoPublico([]);
+
+  assert.equal(demo.pessoas, 0);
+  assert.equal(demo.faixaDominante, null);
+  assert.deepEqual(demo.porGenero, []);
+  assert.ok(demo.piramide.every((linha) => linha.fatia === 0));
+});
+
+test("conta sem o dado explica o motivo em vez de sumir", () => {
+  const demo = demografiaDoPublico([
+    {
+      available: false,
+      unavailableReason: "O TikTok não expõe perfil de público.",
+      newFollowers: 0,
+      unfollows: 0,
+      topInteractors: [],
+      activityByHour: [],
+      topCities: [],
+      demografia: [],
+    },
+    perfilDemografico(celulas([["feminino", "25-34", 10]])),
+  ]);
+
+  assert.equal(demo.contas, 1);
+  assert.deepEqual(demo.semDado, [{ motivo: "O TikTok não expõe perfil de público.", contas: 1 }]);
+});
+
+test("conta disponível mas sem células ainda conta como sem dado", () => {
+  // Abaixo de cem seguidores a rede não devolve o recorte; a conta existe e a
+  // demografia não.
+  const demo = demografiaDoPublico([perfilDemografico([])]);
+
+  assert.equal(demo.contas, 0);
+  assert.equal(demo.semDado.length, 1);
+  assert.ok(demo.semDado[0].motivo.includes("cem seguidores"));
+});
+
+test("perfil gravado por versão antiga, sem o campo, não derruba a tela", () => {
+  // O estado vai para o banco como JSON. Um perfil salvo antes de `demografia`
+  // existir volta sem o campo, e a primeira atualização de versão quebraria a
+  // tela de Público inteira.
+  const antigo = { ...perfilDemografico([]) } as AudienceInsight;
+  delete (antigo as { demografia?: unknown }).demografia;
+
+  const demo = demografiaDoPublico([
+    antigo,
+    perfilDemografico(celulas([["feminino", "25-34", 5]])),
+  ]);
+
+  assert.equal(demo.pessoas, 5);
+  assert.equal(demo.contas, 1);
+  assert.equal(demo.semDado.length, 1);
 });

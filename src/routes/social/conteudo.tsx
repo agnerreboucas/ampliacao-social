@@ -4,7 +4,7 @@ import {
   CalendarDays,
   Clock,
   Hash,
-  Image,
+  Image as ImagemIcone,
   Lightbulb,
   MessageSquare,
   ThumbsDown,
@@ -69,7 +69,7 @@ function ConteudoPage() {
         <LoadingBlock rows={4} />
       ) : dado.pecas.length === 0 ? (
         <EmptyState
-          icon={Image}
+          icon={ImagemIcone}
           title="Nenhuma publicação com números no período"
           description="Assim que houver publicações medidas, a análise aparece aqui."
         />
@@ -104,7 +104,7 @@ function ConteudoPage() {
           </SectionCard>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <SectionCard title="Por formato" icon={Image}>
+            <SectionCard title="Por formato" icon={ImagemIcone}>
               <Barras grupos={dado.porFormato} />
             </SectionCard>
             <SectionCard title="Por assunto" description="Das hashtags e da legenda." icon={Hash}>
@@ -283,6 +283,12 @@ function Barras({ grupos }: { grupos: DesempenhoDoGrupo[] }) {
               </StatusPill>
             ) : null}
           </p>
+          {grupo.ressalva ? (
+            // A barra ordena por alcance médio e não sabe que story joga outro
+            // jogo. A ressalva vai colada ao número, não num rodapé: quem lê a
+            // barra precisa ler a ressalva junto ou não lê.
+            <p className="mt-0.5 text-[11px] text-accent">{grupo.ressalva}</p>
+          ) : null}
         </li>
       ))}
     </ul>

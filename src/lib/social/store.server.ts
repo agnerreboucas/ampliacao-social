@@ -3,10 +3,12 @@ import { classificarPorInteracoes } from "./relacionamento";
 import { carregarEstadoInicial, gravarEstado, usandoBanco } from "./snapshot.server";
 import type { EstadoPersistivel } from "./snapshot";
 import type { ResultadoGravacao } from "./snapshot.server";
+import { FAIXAS_ETARIAS } from "./types";
 import type {
   AtualizacaoManual,
   AudienceInsight,
   Boost,
+  CelulaDemografica,
   DailyMetric,
   InboxItem,
   PlatformUser,
@@ -335,6 +337,42 @@ const FOLLOWER_NAMES = [
   ["@paulo.hs", "Paulo Henrique"],
 ];
 
+/**
+ * Distribuição de seguidores por faixa etária, por rede.
+ *
+ * Os pesos não são iguais entre as redes de propósito: a base do Facebook é
+ * mais velha que a do Instagram, e é exatamente isso que faz alguém decidir
+ * onde publicar o quê. Uma semente com a mesma curva nas duas redes esconderia
+ * a única conclusão que essa tela existe para produzir.
+ */
+const PESOS_POR_FAIXA: Record<"instagram" | "facebook", number[]> = {
+  //          13-17 18-24 25-34 35-44 45-54 55-64  65+
+  instagram: [0.04, 0.23, 0.34, 0.21, 0.11, 0.05, 0.02],
+  facebook: [0.01, 0.09, 0.22, 0.26, 0.21, 0.14, 0.07],
+};
+
+function buildDemografia(seed: AccountSeed, rand: () => number): CelulaDemografica[] {
+  const pesos = PESOS_POR_FAIXA[seed.networkId === "facebook" ? "facebook" : "instagram"];
+  // Um público majoritariamente feminino, como é comum em conta de varejo local
+  // e em campanha de base comunitária — mas não o mesmo em toda faixa.
+  const fatiaFeminina = [0.52, 0.58, 0.61, 0.59, 0.55, 0.5, 0.46];
+
+  return FAIXAS_ETARIAS.flatMap((faixa, indice) => {
+    const naFaixa = Math.round(seed.baseFollowers * pesos[indice] * (0.92 + rand() * 0.16));
+    // A rede devolve "U" para quem não declarou gênero; são poucos, e a fatia
+    // aparece na tela em vez de ser diluída nos outros dois.
+    const naoInformado = Math.round(naFaixa * (0.01 + rand() * 0.02));
+    const restante = naFaixa - naoInformado;
+    const feminino = Math.round(restante * fatiaFeminina[indice]);
+
+    return [
+      { genero: "feminino" as const, faixa, pessoas: feminino },
+      { genero: "masculino" as const, faixa, pessoas: restante - feminino },
+      { genero: "nao_informado" as const, faixa, pessoas: naoInformado },
+    ].filter((celula) => celula.pessoas > 0);
+  });
+}
+
 function buildAudience(seed: AccountSeed, metrics: DailyMetric[]): AudienceInsight {
   const net = NETWORKS[seed.networkId];
   const rand = mulberry32(hashSeed(`${seed.id}-audience`));
@@ -349,6 +387,7 @@ function buildAudience(seed: AccountSeed, metrics: DailyMetric[]): AudienceInsig
       topInteractors: [],
       activityByHour: [],
       topCities: [],
+      demografia: [],
     };
   }
 
@@ -374,6 +413,8 @@ function buildAudience(seed: AccountSeed, metrics: DailyMetric[]): AudienceInsig
     (city, index) => ({ city, share: cityShares[index] }),
   );
 
+  const demografia = buildDemografia(seed, rand);
+
   return {
     available: true,
     newFollowers: last30.reduce((sum, m) => sum + m.followersGained, 0),
@@ -381,6 +422,7 @@ function buildAudience(seed: AccountSeed, metrics: DailyMetric[]): AudienceInsig
     topInteractors,
     activityByHour,
     topCities,
+    demografia,
   };
 }
 
@@ -395,6 +437,16 @@ const CAPTIONS = [
   "Retrospectiva do mês: as ofertas que vocês mais levaram.",
 ];
 
+/** Horários das peças publicadas, espalhados como uma pauta real espalha. */
+const HORAS_DE_PUBLICACAO = [19, 12, 8, 20, 18, 11, 21, 9, 19, 13];
+
+const LEGENDAS_DE_STORY = [
+  "Chegou caminhão de hortifruti — corre que hoje tem tudo fresquinho 🍅",
+  "Enquete: qual sabor de pão vocês querem na próxima semana?",
+  "Últimas horas da oferta do café ☕ passa aqui",
+  "Bastidor da padaria às 5h da manhã",
+];
+
 function buildPosts(accounts: AccountSeed[], today: Date): Post[] {
   const rand = mulberry32(hashSeed("posts"));
   const posts: Post[] = [];
@@ -404,7 +456,11 @@ function buildPosts(accounts: AccountSeed[], today: Date): Post[] {
   for (let i = 0; i < 10; i += 1) {
     const account = accounts[i % 2 === 0 ? 0 : 1];
     const format = formats[i % 3];
-    const publishedAt = addDays(today, -(3 + i * 4));
+    // A hora precisa variar. `today` é meia-noite, e sem isto as dez peças
+    // nasciam às 00h — o que faz a análise por faixa de horário concluir que o
+    // melhor horário para publicar é a madrugada, sobre um dado que só diz
+    // como a semente foi escrita.
+    const publishedAt = new Date(atHour(addDays(today, -(3 + i * 4)), HORAS_DE_PUBLICACAO[i]));
     const reach = Math.round(1500 + rand() * 5200);
     posts.push({
       id: `post-${i + 1}`,
@@ -479,10 +535,44 @@ function buildPosts(accounts: AccountSeed[], today: Date): Post[] {
     });
   });
 
+  // Stories, publicados só no Instagram e com os números que a rede devolve
+  // para eles: alcance menor porque só chega a quem abre stories, respostas em
+  // vez de comentários, e nada de curtida ou salvamento.
+  for (let i = 0; i < 4; i += 1) {
+    const publishedAt = atHour(addDays(today, -(2 + i * 5)), 9 + i * 3);
+    const reach = Math.round(600 + rand() * 1400);
+    posts.push({
+      id: `post-s${i + 1}`,
+      projectId: "proj-mercadinho",
+      accountIds: ["acc-ig-mercadinho"],
+      format: "story",
+      caption: LEGENDAS_DE_STORY[i % LEGENDAS_DE_STORY.length],
+      media: buildMedia("story", rand),
+      status: "publicado",
+      scheduledFor: null,
+      publishedAt,
+      createdBy: "user-carla",
+      approvedBy: null,
+      requiresApproval: false,
+      metrics: {
+        reach,
+        impressions: Math.round(reach * (1.05 + rand() * 0.15)),
+        likes: 0,
+        comments: Math.round(reach * (0.01 + rand() * 0.015)),
+        shares: Math.round(reach * (0.003 + rand() * 0.004)),
+        saves: 0,
+      },
+      coverGradient: GRADIENTS[(i + 5) % GRADIENTS.length],
+    });
+  }
+
   return posts.sort(sortPostsByRecency);
 }
 
 function buildMedia(format: Post["format"], rand: () => number): Post["media"] {
+  if (format === "story") {
+    return { count: 1, aspectRatio: "9:16", fileSizeMb: 1.4 + Math.round(rand() * 20) / 10 };
+  }
   if (format === "carrossel") {
     return { count: 3 + Math.floor(rand() * 5), aspectRatio: "4:5", fileSizeMb: 4.2 };
   }
@@ -535,7 +625,17 @@ function buildBoosts(posts: Post[], today: Date): Boost[] {
       endsAt: toDayKey(endsAt),
       status: active ? "ativo" : "encerrado",
       audience: {
-        locations: ["São Paulo (+10 km)"],
+        // Segmentação por município, com os nomes como o Gerenciador de
+        // Anúncios os escreve. É daqui que sai o alcance por cidade do mapa —
+        // e é por isso que a lista varia entre os impulsionamentos: uma
+        // campanha real não mira sempre os mesmos lugares, e o mapa precisa
+        // mostrar tanto a concentração quanto os vazios.
+        locations: [
+          ["São Paulo (+10 km)"],
+          ["São Paulo (+10 km)", "Guarulhos", "Osasco"],
+          ["Campinas", "Santo André", "São Bernardo do Campo"],
+          ["São Paulo (+10 km)", "Sorocaba", "Mauá", "Diadema"],
+        ][index],
         ageMin: 25,
         ageMax: 54,
         interests: pick(rand, [

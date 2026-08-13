@@ -110,11 +110,56 @@ export type OrganicPaidSplit = {
 };
 
 /** PRD 3.2 — disponível apenas quando a API da rede expõe o dado. */
+/**
+ * As faixas etárias como a Meta as devolve.
+ *
+ * São exatamente estas — não é escolha de projeto. Reagrupar ("18 a 35") pareceria
+ * mais limpo e impediria comparar com o painel da própria rede, que é onde a
+ * pessoa vai conferir se o número bate.
+ */
+export type FaixaEtaria = "13-17" | "18-24" | "25-34" | "35-44" | "45-54" | "55-64" | "65+";
+
+export const FAIXAS_ETARIAS: FaixaEtaria[] = [
+  "13-17",
+  "18-24",
+  "25-34",
+  "35-44",
+  "45-54",
+  "55-64",
+  "65+",
+];
+
+/**
+ * O gênero como a rede o informa.
+ *
+ * `nao_informado` é uma fatia de verdade, e não um resto a ser distribuído: a
+ * rede devolve `U` para quem não declarou. Diluir esses perfis entre os outros
+ * dois inflaria os dois e apagaria a informação de que uma parte do público
+ * simplesmente não disse.
+ */
+export type Genero = "feminino" | "masculino" | "nao_informado";
+
+/** Uma célula do cruzamento gênero × faixa etária, como a rede a entrega. */
+export type CelulaDemografica = {
+  genero: Genero;
+  faixa: FaixaEtaria;
+  /** Seguidores nesta célula. Estimativa agregada da rede. */
+  pessoas: number;
+};
+
 export type AudienceInsight = {
   available: boolean;
   unavailableReason?: string;
   newFollowers: number;
   unfollows: number;
+  /**
+   * Distribuição dos seguidores por gênero e faixa etária.
+   *
+   * Vem do perfil de público da rede — é sobre **seguidores**, não sobre quem
+   * foi alcançado, e a rede só a devolve acima de cem seguidores. Vazio quando
+   * a conta não atinge o mínimo ou a rede não expõe o dado.
+   */
+  demografia: CelulaDemografica[];
   topInteractors: {
     handle: string;
     name: string;
@@ -126,7 +171,19 @@ export type AudienceInsight = {
   topCities: { city: string; share: number }[];
 };
 
-export type PostFormat = "imagem" | "carrossel" | "video";
+/**
+ * Os formatos que a plataforma acompanha.
+ *
+ * `story` é diferente dos outros três em duas coisas que aparecem em toda
+ * análise: ele expira em 24 horas, e a rede não devolve curtidas nem
+ * salvamentos para ele — devolve respostas, toques e saídas. Comparar a taxa de
+ * um story com a de um post de feed sem dizer isso faz o story parecer o pior
+ * formato da conta quando ele pode ser o melhor.
+ */
+export type PostFormat = "imagem" | "carrossel" | "video" | "story";
+
+/** Formatos cujas métricas de interação são comparáveis entre si. */
+export const FORMATOS_DE_FEED: PostFormat[] = ["imagem", "carrossel", "video"];
 
 export type PostStatus =
   | "rascunho"

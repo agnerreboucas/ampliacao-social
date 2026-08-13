@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { Clock, Info, MapPin, Megaphone, Users, X } from "lucide-react";
+import { Clock, Info, MapPin, Megaphone, Users, UsersRound, X } from "lucide-react";
 import { useState } from "react";
 
 import { analisarPublico, detalharCidade } from "@/lib/api/social.functions";
@@ -14,6 +14,7 @@ import {
   SectionCard,
   StatusPill,
 } from "@/components/social/primitives";
+import { PiramideEtaria } from "@/components/social/piramide-etaria";
 import { NOME_DO_FORMATO } from "@/lib/social/conteudo";
 import { EXPLICACAO_DA_ORIGEM, ROTULO_DA_RELACAO, type OrigemDoDado } from "@/lib/social/publico";
 import { NETWORKS } from "@/lib/social/networks";
@@ -59,6 +60,10 @@ function PublicoPage() {
   });
 
   const dado = dados.data;
+  const contasSemDado = (dado?.demografia.semDado ?? []).reduce(
+    (total, linha) => total + linha.contas,
+    0,
+  );
   const maiorAlcance = Math.max(...(dado?.cidades.map((c) => c.alcancePago) ?? [0]), 1);
 
   return (
@@ -112,6 +117,45 @@ function PublicoPage() {
               nota="com dado de alguma origem"
             />
           </div>
+
+          <SectionCard
+            title="Quem são: gênero e idade"
+            description="Distribuição dos seguidores segundo o perfil de público da rede. É sobre quem segue — não sobre quem foi alcançado pelos anúncios."
+            icon={UsersRound}
+            actions={
+              dado.demografia.faixaDominante ? (
+                <StatusPill tone="destaque">
+                  maior faixa: {dado.demografia.faixaDominante} anos
+                </StatusPill>
+              ) : null
+            }
+          >
+            {dado.demografia.pessoas === 0 ? (
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>Nenhuma conta deste projeto tem o recorte por gênero e idade.</p>
+                {dado.demografia.semDado.map((linha) => (
+                  <p key={linha.motivo} className="text-xs">
+                    · {linha.motivo}
+                    {linha.contas > 1 ? ` (${linha.contas} contas)` : ""}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <PiramideEtaria demografia={dado.demografia} />
+                <p className="text-xs text-muted-foreground">
+                  Soma de {formatNumber(dado.demografia.pessoas)} perfis em {dado.demografia.contas}{" "}
+                  {dado.demografia.contas === 1 ? "conta" : "contas"}. Quem segue em mais de uma
+                  rede é contado uma vez por rede — nenhuma delas informa que é a mesma pessoa.
+                  {contasSemDado > 0
+                    ? ` ${contasSemDado} ${
+                        contasSemDado === 1 ? "conta ficou" : "contas ficaram"
+                      } de fora por não ter o dado.`
+                    : ""}
+                </p>
+              </div>
+            )}
+          </SectionCard>
 
           <SectionCard
             title="Cidades"

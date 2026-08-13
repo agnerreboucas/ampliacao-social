@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
+  CirclePlay,
   Images,
   Image as ImageIcon,
   LoaderCircle,
@@ -27,13 +28,15 @@ import { cn } from "@/lib/utils";
 const FORMAT_OPTIONS: { id: PostFormat; label: string; icon: typeof ImageIcon; hint: string }[] = [
   { id: "imagem", label: "Imagem única", icon: ImageIcon, hint: "1 arquivo" },
   { id: "carrossel", label: "Carrossel", icon: Images, hint: "2 a 10 imagens" },
-  { id: "video", label: "Vídeo", icon: Video, hint: "Reels, feed ou stories" },
+  { id: "video", label: "Vídeo", icon: Video, hint: "Reels ou feed" },
+  { id: "story", label: "Story", icon: CirclePlay, hint: "9:16, sai do ar em 24h" },
 ];
 
 const DEFAULT_MEDIA: Record<PostFormat, PostMedia> = {
   imagem: { count: 1, aspectRatio: "4:5", fileSizeMb: 2 },
   carrossel: { count: 3, aspectRatio: "4:5", fileSizeMb: 4.5 },
   video: { count: 1, aspectRatio: "9:16", fileSizeMb: 45, durationSeconds: 30 },
+  story: { count: 1, aspectRatio: "9:16", fileSizeMb: 2.5 },
 };
 
 const ASPECT_OPTIONS: PostMedia["aspectRatio"][] = ["1:1", "4:5", "9:16", "16:9"];

@@ -8,6 +8,11 @@ import {
   LayoutDashboard,
   Link2,
   LogOut,
+  // O apelido não é estilo: importar `Map` sem ele sombreia o `Map` do
+  // JavaScript no módulo inteiro — inclusive no código que o empacotador
+  // injeta aqui. O preâmbulo de HMR do router faz `new Map()`, e a plataforma
+  // inteira morria em "Map is not a constructor" antes de carregar a sessão.
+  Map as MapaIcone,
   MapPin,
   MessagesSquare,
   PencilLine,
@@ -97,6 +102,7 @@ function SocialShell() {
     { to: "/social/importar", label: "Importar histórico", icon: Upload, ability: "metricas" },
     { to: "/social/conteudo", label: "Conteúdo", icon: Sparkles, ability: "metricas" },
     { to: "/social/publico", label: "Público", icon: MapPin, ability: "metricas" },
+    { to: "/social/mapa", label: "Mapa de SP", icon: MapaIcone, ability: "metricas" },
     { to: "/social/publicacoes", label: "Publicações", icon: Send, ability: "publicar" },
     { to: "/social/impulsionamentos", label: "Impulsionar", icon: Rocket, ability: "impulsionar" },
     {

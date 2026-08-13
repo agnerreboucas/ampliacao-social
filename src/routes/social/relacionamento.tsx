@@ -1,8 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import {
+  ArrowUpRight,
   AtSign,
   CheckCheck,
+  CirclePlay,
+  Images,
+  Image as ImageIcon,
   Inbox,
   LoaderCircle,
   MessageCircle,
@@ -10,6 +14,7 @@ import {
   Send,
   Users,
   UserCheck,
+  Video,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -30,7 +35,8 @@ import {
   PageHeader,
   StatusPill,
 } from "@/components/social/primitives";
-import { formatDateTime, formatRelative } from "@/lib/social/format";
+import { formatCompact, formatDateTime, formatNumber, formatRelative } from "@/lib/social/format";
+import { diaPorExtenso, nomeDoFormato, type PecaDeOrigem } from "@/lib/social/rastreio";
 import { NETWORKS } from "@/lib/social/networks";
 import {
   MODELOS_POR_RELACAO,
@@ -45,6 +51,7 @@ import type {
   InboxItem,
   NetworkId,
   PlatformUser,
+  PostFormat,
   RelacaoPessoa,
   SocialAccount,
 } from "@/lib/social/types";
@@ -88,6 +95,8 @@ function RelacionamentoPage() {
   const items = useMemo(() => inbox.data?.items ?? [], [inbox.data]);
   const accounts = useMemo(() => inbox.data?.accounts ?? [], [inbox.data]);
   const users = inbox.data?.users ?? [];
+  const origens = inbox.data?.origens ?? {};
+  const conversasPorPeca = inbox.data?.conversasPorPeca ?? {};
 
   const redePorConta = useMemo(() => {
     const mapa: Record<string, NetworkId> = {};
@@ -427,6 +436,8 @@ function RelacionamentoPage() {
             <ConversationPanel
               item={selected}
               account={accounts.find((account) => account.id === selected.accountId)}
+              origem={selected.postId ? (origens[selected.postId] ?? null) : null}
+              conversasDaPeca={selected.postId ? (conversasPorPeca[selected.postId] ?? 0) : 0}
               users={users}
               texto={texto}
               onTexto={setTexto}
@@ -452,6 +463,96 @@ function RelacionamentoPage() {
         </div>
       )}
     </div>
+  );
+}
+
+const ICONE_DO_FORMATO: Record<PostFormat, typeof ImageIcon> = {
+  imagem: ImageIcon,
+  carrossel: Images,
+  video: Video,
+  story: CirclePlay,
+};
+
+/**
+ * A peça que provocou a conversa, no topo dela.
+ *
+ * Fica antes do texto do comentário de propósito: quem abre a conversa lê a
+ * origem primeiro e responde já sabendo do que a pessoa está falando. Antes
+ * daqui a tela mostrava só o identificador interno da publicação, que não diz
+ * formato, nem dia, nem tamanho — e obrigava a procurar a peça na mão.
+ */
+function OrigemDaConversa({
+  postId,
+  origem,
+  conversasDaPeca,
+}: {
+  postId: string;
+  origem: PecaDeOrigem | null;
+  conversasDaPeca: number;
+}) {
+  if (!origem) {
+    // Publicação apagada na rede, interação importada de uma planilha, ou
+    // comentário em anúncio que nunca virou post. Dizer isso é melhor que
+    // esconder: quem procura a peça precisa saber que não vai achar.
+    return (
+      <div className="rounded-xl border border-dashed border-border px-3.5 py-2.5 text-xs text-muted-foreground">
+        Veio da publicação <code className="text-foreground">{postId}</code>, que não está mais na
+        plataforma — pode ter sido apagada na rede ou ter entrado por importação.
+      </div>
+    );
+  }
+
+  const Icone = ICONE_DO_FORMATO[origem.formato];
+  const quando = diaPorExtenso(origem.publicadoEm);
+
+  return (
+    <Link
+      to="/social/publicacao/$postId"
+      params={{ postId: origem.id }}
+      className="block rounded-xl border border-border p-3 transition-colors hover:border-accent/60 hover:bg-secondary/40"
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="grid size-12 shrink-0 place-items-center rounded-lg"
+          style={{ background: origem.coverGradient }}
+        >
+          <Icone className="size-5 text-white" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            <span className="font-medium capitalize text-foreground">
+              {nomeDoFormato(origem.formato)}
+            </span>
+            {origem.redes.map((rede) => (
+              <NetworkChip key={rede} networkId={rede} />
+            ))}
+            {quando ? <span>· {quando}</span> : <span>· ainda não publicado</span>}
+          </div>
+
+          <p className="mt-1 line-clamp-2 text-sm">{origem.trecho}</p>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            {origem.metricas ? (
+              <>
+                <span>{formatCompact(origem.metricas.alcance)} de alcance</span>
+                <span>{formatNumber(origem.metricas.curtidas)} curtidas</span>
+                <span>{formatNumber(origem.metricas.comentarios)} comentários na rede</span>
+              </>
+            ) : (
+              <span>sem números da rede ainda</span>
+            )}
+            {conversasDaPeca > 1 ? (
+              <StatusPill tone="destaque">
+                {conversasDaPeca} conversas nasceram desta peça
+              </StatusPill>
+            ) : null}
+          </div>
+        </div>
+
+        <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
+      </div>
+    </Link>
   );
 }
 
@@ -641,6 +742,8 @@ function BulkPanel({
 function ConversationPanel({
   item,
   account,
+  origem,
+  conversasDaPeca,
   users,
   texto,
   onTexto,
@@ -653,6 +756,8 @@ function ConversationPanel({
 }: {
   item: InboxItem;
   account?: SocialAccount;
+  origem: PecaDeOrigem | null;
+  conversasDaPeca: number;
   users: PlatformUser[];
   texto: string;
   onTexto: (value: string) => void;
@@ -680,7 +785,6 @@ function ConversationPanel({
             {account ? <NetworkChip networkId={account.networkId} /> : null}
             {account ? <span>{account.handle}</span> : null}
             <span>· {item.interacoes} interações no total</span>
-            {item.postId ? <span>· na publicação {item.postId}</span> : null}
           </div>
         </div>
 
@@ -735,6 +839,14 @@ function ConversationPanel({
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        {item.postId ? (
+          <OrigemDaConversa
+            postId={item.postId}
+            origem={origem}
+            conversasDaPeca={conversasDaPeca}
+          />
+        ) : null}
+
         <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border bg-secondary/50 px-4 py-3">
           <p className="text-sm">{item.text}</p>
           <p className="mt-1.5 text-[11px] text-muted-foreground">

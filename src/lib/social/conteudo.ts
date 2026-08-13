@@ -1,3 +1,4 @@
+import { FORMATOS_DE_FEED } from "./types.ts";
 import type { InboxItem, Post, PostFormat } from "./types";
 
 /**
@@ -34,6 +35,14 @@ export type DesempenhoDoGrupo = {
   taxa: number;
   /** Quanto acima ou abaixo da média geral, em porcentagem. */
   contraMedia: number;
+  /**
+   * Por que este grupo não se compara direto com os outros.
+   *
+   * Existe para o caso do story, cuja taxa a rede calcula sobre outras
+   * interações. Sem a ressalva ao lado do número, a tabela ordena story em
+   * último e quem lê conclui o contrário do que o dado permite.
+   */
+  ressalva?: string;
 };
 
 /** Uma peça com os números que interessam para comparar. */
@@ -58,6 +67,7 @@ export const NOME_DO_FORMATO: Record<PostFormat, string> = {
   imagem: "Imagem",
   carrossel: "Carrossel",
   video: "Vídeo",
+  story: "Story",
 };
 
 /**
@@ -215,6 +225,14 @@ export function porFormato(pecas: PecaAvaliada[]): DesempenhoDoGrupo[] {
     pecas,
     (peca) => [peca.post.format],
     (chave) => NOME_DO_FORMATO[chave as PostFormat] ?? chave,
+  ).map((grupo) =>
+    FORMATOS_DE_FEED.includes(grupo.chave as PostFormat)
+      ? grupo
+      : {
+          ...grupo,
+          ressalva:
+            "A rede não devolve curtidas nem salvamentos de story, e o alcance é limitado a quem abre stories. A taxa aqui não se compara com a do feed.",
+        },
   );
 }
 
@@ -270,7 +288,12 @@ export function destaques(
   minimoDePecas = 3,
 ): { positivos: DesempenhoDoGrupo[]; negativos: DesempenhoDoGrupo[] } {
   const grupos = [...porFormato(pecas), ...porAssunto(pecas), ...porFaixaDeHorario(pecas)].filter(
-    (grupo) => grupo.pecas >= minimoDePecas && grupo.chave !== SEM_ASSUNTO,
+    // Grupo com ressalva não entra em destaque. Um destaque é uma frase curta e
+    // conclusiva — "Story: −64%" — e é justamente o formato de frase que não
+    // cabe numa comparação que precisa de asterisco. O story continua na
+    // tabela por formato, onde a ressalva é lida junto com o número.
+    (grupo) =>
+      grupo.pecas >= minimoDePecas && grupo.chave !== SEM_ASSUNTO && grupo.ressalva === undefined,
   );
 
   return {
