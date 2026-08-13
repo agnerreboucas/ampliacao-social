@@ -15,12 +15,14 @@ import { Route as SocialIndexRouteImport } from './routes/social/index'
 import { Route as SocialEntrarRouteImport } from './routes/social_.entrar'
 import { Route as SocialRelatoriosRouteImport } from './routes/social/relatorios'
 import { Route as SocialRelacionamentoRouteImport } from './routes/social/relacionamento'
+import { Route as SocialPublicoRouteImport } from './routes/social/publico'
 import { Route as SocialPublicacoesRouteImport } from './routes/social/publicacoes'
 import { Route as SocialImpulsionamentosRouteImport } from './routes/social/impulsionamentos'
 import { Route as SocialImportarRouteImport } from './routes/social/importar'
 import { Route as SocialHistoricoRouteImport } from './routes/social/historico'
 import { Route as SocialGeralRouteImport } from './routes/social/geral'
 import { Route as SocialEquipeRouteImport } from './routes/social/equipe'
+import { Route as SocialConteudoRouteImport } from './routes/social/conteudo'
 import { Route as SocialContasRouteImport } from './routes/social/contas'
 import { Route as SocialAtualizarRouteImport } from './routes/social/atualizar'
 import { Route as RelatorioTokenRouteImport } from './routes/relatorio.$token'
@@ -59,6 +61,11 @@ const SocialRelacionamentoRoute = SocialRelacionamentoRouteImport.update({
   path: '/relacionamento',
   getParentRoute: () => SocialRoute,
 } as any)
+const SocialPublicoRoute = SocialPublicoRouteImport.update({
+  id: '/publico',
+  path: '/publico',
+  getParentRoute: () => SocialRoute,
+} as any)
 const SocialPublicacoesRoute = SocialPublicacoesRouteImport.update({
   id: '/publicacoes',
   path: '/publicacoes',
@@ -87,6 +94,11 @@ const SocialGeralRoute = SocialGeralRouteImport.update({
 const SocialEquipeRoute = SocialEquipeRouteImport.update({
   id: '/equipe',
   path: '/equipe',
+  getParentRoute: () => SocialRoute,
+} as any)
+const SocialConteudoRoute = SocialConteudoRouteImport.update({
+  id: '/conteudo',
+  path: '/conteudo',
   getParentRoute: () => SocialRoute,
 } as any)
 const SocialContasRoute = SocialContasRouteImport.update({
@@ -132,12 +144,14 @@ export interface FileRoutesByFullPath {
   '/relatorio/$token': typeof RelatorioTokenRoute
   '/social/atualizar': typeof SocialAtualizarRoute
   '/social/contas': typeof SocialContasRoute
+  '/social/conteudo': typeof SocialConteudoRoute
   '/social/equipe': typeof SocialEquipeRoute
   '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
+  '/social/publico': typeof SocialPublicoRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
   '/social/relatorios': typeof SocialRelatoriosRoute
   '/social/entrar': typeof SocialEntrarRoute
@@ -152,12 +166,14 @@ export interface FileRoutesByTo {
   '/relatorio/$token': typeof RelatorioTokenRoute
   '/social/atualizar': typeof SocialAtualizarRoute
   '/social/contas': typeof SocialContasRoute
+  '/social/conteudo': typeof SocialConteudoRoute
   '/social/equipe': typeof SocialEquipeRoute
   '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
+  '/social/publico': typeof SocialPublicoRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
   '/social/relatorios': typeof SocialRelatoriosRoute
   '/social/entrar': typeof SocialEntrarRoute
@@ -174,12 +190,14 @@ export interface FileRoutesById {
   '/relatorio/$token': typeof RelatorioTokenRoute
   '/social/atualizar': typeof SocialAtualizarRoute
   '/social/contas': typeof SocialContasRoute
+  '/social/conteudo': typeof SocialConteudoRoute
   '/social/equipe': typeof SocialEquipeRoute
   '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
+  '/social/publico': typeof SocialPublicoRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
   '/social/relatorios': typeof SocialRelatoriosRoute
   '/social_/entrar': typeof SocialEntrarRoute
@@ -197,12 +215,14 @@ export interface FileRouteTypes {
     | '/relatorio/$token'
     | '/social/atualizar'
     | '/social/contas'
+    | '/social/conteudo'
     | '/social/equipe'
     | '/social/geral'
     | '/social/historico'
     | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/publicacoes'
+    | '/social/publico'
     | '/social/relacionamento'
     | '/social/relatorios'
     | '/social/entrar'
@@ -217,12 +237,14 @@ export interface FileRouteTypes {
     | '/relatorio/$token'
     | '/social/atualizar'
     | '/social/contas'
+    | '/social/conteudo'
     | '/social/equipe'
     | '/social/geral'
     | '/social/historico'
     | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/publicacoes'
+    | '/social/publico'
     | '/social/relacionamento'
     | '/social/relatorios'
     | '/social/entrar'
@@ -238,12 +260,14 @@ export interface FileRouteTypes {
     | '/relatorio/$token'
     | '/social/atualizar'
     | '/social/contas'
+    | '/social/conteudo'
     | '/social/equipe'
     | '/social/geral'
     | '/social/historico'
     | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/publicacoes'
+    | '/social/publico'
     | '/social/relacionamento'
     | '/social/relatorios'
     | '/social_/entrar'
@@ -305,6 +329,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SocialRelacionamentoRouteImport
       parentRoute: typeof SocialRoute
     }
+    '/social/publico': {
+      id: '/social/publico'
+      path: '/publico'
+      fullPath: '/social/publico'
+      preLoaderRoute: typeof SocialPublicoRouteImport
+      parentRoute: typeof SocialRoute
+    }
     '/social/publicacoes': {
       id: '/social/publicacoes'
       path: '/publicacoes'
@@ -345,6 +376,13 @@ declare module '@tanstack/react-router' {
       path: '/equipe'
       fullPath: '/social/equipe'
       preLoaderRoute: typeof SocialEquipeRouteImport
+      parentRoute: typeof SocialRoute
+    }
+    '/social/conteudo': {
+      id: '/social/conteudo'
+      path: '/conteudo'
+      fullPath: '/social/conteudo'
+      preLoaderRoute: typeof SocialConteudoRouteImport
       parentRoute: typeof SocialRoute
     }
     '/social/contas': {
@@ -402,12 +440,14 @@ declare module '@tanstack/react-router' {
 interface SocialRouteChildren {
   SocialAtualizarRoute: typeof SocialAtualizarRoute
   SocialContasRoute: typeof SocialContasRoute
+  SocialConteudoRoute: typeof SocialConteudoRoute
   SocialEquipeRoute: typeof SocialEquipeRoute
   SocialGeralRoute: typeof SocialGeralRoute
   SocialHistoricoRoute: typeof SocialHistoricoRoute
   SocialImportarRoute: typeof SocialImportarRoute
   SocialImpulsionamentosRoute: typeof SocialImpulsionamentosRoute
   SocialPublicacoesRoute: typeof SocialPublicacoesRoute
+  SocialPublicoRoute: typeof SocialPublicoRoute
   SocialRelacionamentoRoute: typeof SocialRelacionamentoRoute
   SocialRelatoriosRoute: typeof SocialRelatoriosRoute
   SocialIndexRoute: typeof SocialIndexRoute
@@ -419,12 +459,14 @@ interface SocialRouteChildren {
 const SocialRouteChildren: SocialRouteChildren = {
   SocialAtualizarRoute: SocialAtualizarRoute,
   SocialContasRoute: SocialContasRoute,
+  SocialConteudoRoute: SocialConteudoRoute,
   SocialEquipeRoute: SocialEquipeRoute,
   SocialGeralRoute: SocialGeralRoute,
   SocialHistoricoRoute: SocialHistoricoRoute,
   SocialImportarRoute: SocialImportarRoute,
   SocialImpulsionamentosRoute: SocialImpulsionamentosRoute,
   SocialPublicacoesRoute: SocialPublicacoesRoute,
+  SocialPublicoRoute: SocialPublicoRoute,
   SocialRelacionamentoRoute: SocialRelacionamentoRoute,
   SocialRelatoriosRoute: SocialRelatoriosRoute,
   SocialIndexRoute: SocialIndexRoute,

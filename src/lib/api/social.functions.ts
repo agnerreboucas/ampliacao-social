@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import {
+  PERIOD_DAYS,
   buildSeries,
   mergeSeries,
   slicePeriod,
@@ -65,6 +66,15 @@ import { anotar, consultar, consultarTudo, type NovoEvento } from "@/lib/social/
 import { ACOES_CONHECIDAS, resumirPorPessoa, type AcaoHistorico } from "@/lib/social/historico";
 import { recomendar, resumirCanais } from "@/lib/social/recomendacoes";
 import { aplicarPlano, montarPlano } from "@/lib/social/importacao";
+import {
+  avaliarPecas,
+  destaques,
+  porAssunto,
+  porDiaDaSemana,
+  porFaixaDeHorario,
+  porFormato,
+} from "@/lib/social/conteudo";
+import { cidadesAlcancadas, normalizarCidade, perfilDoPublico } from "@/lib/social/publico";
 import { gerarRelatorioPdf } from "@/lib/social/pdf/relatorio";
 import { paraBase64 } from "@/lib/social/pdf/documento";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
@@ -97,6 +107,7 @@ import {
 } from "@/lib/social/store.server";
 import type {
   AtualizacaoManual,
+  AudienceInsight,
   Boost,
   InboxItem,
   NetworkId,
@@ -2768,4 +2779,137 @@ export const obterRede = createServerFn({ method: "POST" })
         agoraMs: Date.now(),
       }),
     };
+  });
+
+// ---------------------------------------------------------------------------
+// Conteúdo e público
+// ---------------------------------------------------------------------------
+
+/** O que rendeu, o que não rendeu, e o que os dois têm em comum. */
+export const analisarConteudo = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string().optional(), period: periodSchema }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const ids = new Set(contas.map((conta) => conta.id));
+    const dias = PERIOD_DAYS[data.period as PeriodKey];
+
+    // O recorte é pela data de publicação: uma peça de três meses atrás não
+    // deve entrar na média de "últimos 30 dias" só porque ainda recebe curtida.
+    const limite = dias === null ? null : toDayKey(new Date(Date.now() - dias * 86400000));
+
+    const posts = db.posts.filter(
+      (post) =>
+        post.accountIds.some((id) => ids.has(id)) &&
+        post.status === "publicado" &&
+        (limite === null || (post.publishedAt ?? "").slice(0, 10) >= limite),
+    );
+    const inbox = db.inbox.filter((item) => ids.has(item.accountId));
+
+    const pecas = avaliarPecas(posts, inbox);
+
+    return {
+      period: data.period as PeriodKey,
+      pecas,
+      porFormato: porFormato(pecas),
+      porAssunto: porAssunto(pecas),
+      porDiaDaSemana: porDiaDaSemana(pecas),
+      porFaixaDeHorario: porFaixaDeHorario(pecas),
+      destaques: destaques(pecas),
+      contas,
+    };
+  });
+
+/**
+ * Quem é o público e onde ele está.
+ *
+ * Cada bloco carrega a origem do número, e a tela mostra isso junto. É o que
+ * separa "chegamos a 4.200 pessoas em Recife, porque foi para lá que o anúncio
+ * foi contratado" de "estimamos que 18% do seu público seja de Recife, segundo
+ * a rede" — os dois aparecem, mas ninguém os confunde.
+ */
+export const analisarPublico = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string().optional(), period: periodSchema }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const ids = new Set(contas.map((conta) => conta.id));
+    const period = data.period as PeriodKey;
+
+    const inbox = db.inbox.filter((item) => ids.has(item.accountId));
+    const impulsionamentos = db.boosts.filter((boost) => ids.has(boost.accountId));
+
+    const seguidoresTotais = contas.reduce((soma, conta) => {
+      const historico = slicePeriod(db.metrics.get(conta.id) ?? [], period);
+      return soma + (historico[historico.length - 1]?.followers ?? 0);
+    }, 0);
+
+    const perfis = contas
+      .map((conta) => db.audience.get(conta.id))
+      .filter((perfil): perfil is AudienceInsight => Boolean(perfil));
+
+    return {
+      period,
+      cidades: cidadesAlcancadas(impulsionamentos, perfis, seguidoresTotais),
+      perfil: perfilDoPublico(inbox),
+      seguidoresTotais,
+      // Quais redes de fato reportam perfil de público — o resto da tela
+      // depende disso para não prometer o que não tem.
+      redesComPerfil: contas
+        .filter((conta) => db.audience.get(conta.id)?.available)
+        .map((conta) => conta.networkId),
+      redesSemPerfil: [
+        ...new Set(
+          contas
+            .filter((conta) => !db.audience.get(conta.id)?.available)
+            .map((conta) => conta.networkId),
+        ),
+      ],
+    };
+  });
+
+/**
+ * Uma cidade por dentro: o que foi entregue lá e por qual peça.
+ *
+ * É a rastreabilidade do lado do público — da cidade até a publicação que
+ * chegou nela, e não só até o número.
+ */
+export const detalharCidade = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ cidade: z.string().min(1), projectId: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const ids = new Set(contas.map((conta) => conta.id));
+
+    const impulsionamentos = db.boosts.filter(
+      (boost) =>
+        ids.has(boost.accountId) &&
+        boost.audience.locations.some(
+          (local) => normalizarCidade(local) === normalizarCidade(data.cidade),
+        ),
+    );
+
+    const seguidoresTotais = contas.reduce((soma, conta) => {
+      const historico = db.metrics.get(conta.id) ?? [];
+      return soma + (historico[historico.length - 1]?.followers ?? 0);
+    }, 0);
+
+    const perfis = contas
+      .map((conta) => db.audience.get(conta.id))
+      .filter((perfil): perfil is AudienceInsight => Boolean(perfil));
+
+    const cidade = cidadesAlcancadas(impulsionamentos, perfis, seguidoresTotais).find(
+      (item) => normalizarCidade(item.cidade) === normalizarCidade(data.cidade),
+    );
+
+    // As peças entregues ali, com o que cada uma é — formato, dia, números.
+    const publicacoes = impulsionamentos
+      .map((boost) => {
+        const post = db.posts.find((candidato) => candidato.id === boost.postId);
+        const conta = db.accounts.find((candidata) => candidata.id === boost.accountId);
+        return post && conta ? { post, boost, conta } : null;
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
+    return { cidade: cidade ?? null, publicacoes, nome: normalizarCidade(data.cidade) };
   });

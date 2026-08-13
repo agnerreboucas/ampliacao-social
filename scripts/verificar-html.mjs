@@ -88,6 +88,8 @@ if ((await campoEmail.count()) === 0) {
     ["Visão geral", /CANAL A CANAL/i],
     ["Contas", /conta|perfil/i],
     ["Importar histórico", /Traga a planilha|Escolha a conta/i],
+    ["Conteúdo", /Peça a peça|Por formato/i],
+    ["Público", /Cidades|De onde vêm estes números/i],
     ["Publicações", /publica/i],
     ["Relacionamento", /interaç|coment/i],
     ["Relatórios", /relat/i],

@@ -8,11 +8,13 @@ import {
   LayoutDashboard,
   Link2,
   LogOut,
+  MapPin,
   MessagesSquare,
   PencilLine,
   Radar,
   Rocket,
   Send,
+  Sparkles,
   Upload,
   Users,
 } from "lucide-react";
@@ -93,6 +95,8 @@ function SocialShell() {
     { to: "/social/contas", label: "Contas", icon: Link2, ability: "metricas" },
     { to: "/social/atualizar", label: "Atualizar números", icon: PencilLine, ability: "metricas" },
     { to: "/social/importar", label: "Importar histórico", icon: Upload, ability: "metricas" },
+    { to: "/social/conteudo", label: "Conteúdo", icon: Sparkles, ability: "metricas" },
+    { to: "/social/publico", label: "Público", icon: MapPin, ability: "metricas" },
     { to: "/social/publicacoes", label: "Publicações", icon: Send, ability: "publicar" },
     { to: "/social/impulsionamentos", label: "Impulsionar", icon: Rocket, ability: "impulsionar" },
     {

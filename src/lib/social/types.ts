@@ -122,6 +122,7 @@ export type AudienceInsight = {
     avatarGradient: string;
   }[];
   activityByHour: { hour: number; activity: number }[];
+  /** Participação de cada cidade nos seguidores, **em porcentagem** (0 a 100). */
   topCities: { city: string; share: number }[];
 };
 
