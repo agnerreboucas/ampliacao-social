@@ -22,6 +22,7 @@ import { Route as SocialRelatoriosRouteImport } from './routes/social/relatorios
 import { Route as SocialRelacionamentoRouteImport } from './routes/social/relacionamento'
 import { Route as SocialPublicacoesRouteImport } from './routes/social/publicacoes'
 import { Route as SocialImpulsionamentosRouteImport } from './routes/social/impulsionamentos'
+import { Route as SocialImportarRouteImport } from './routes/social/importar'
 import { Route as SocialHistoricoRouteImport } from './routes/social/historico'
 import { Route as SocialGeralRouteImport } from './routes/social/geral'
 import { Route as SocialEquipeRouteImport } from './routes/social/equipe'
@@ -97,6 +98,11 @@ const SocialImpulsionamentosRoute = SocialImpulsionamentosRouteImport.update({
   path: '/impulsionamentos',
   getParentRoute: () => SocialRoute,
 } as any)
+const SocialImportarRoute = SocialImportarRouteImport.update({
+  id: '/importar',
+  path: '/importar',
+  getParentRoute: () => SocialRoute,
+} as any)
 const SocialHistoricoRoute = SocialHistoricoRouteImport.update({
   id: '/historico',
   path: '/historico',
@@ -158,6 +164,7 @@ export interface FileRoutesByFullPath {
   '/social/equipe': typeof SocialEquipeRoute
   '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
+  '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/social/equipe': typeof SocialEquipeRoute
   '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
+  '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/social/equipe': typeof SocialEquipeRoute
   '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
+  '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
@@ -232,6 +241,7 @@ export interface FileRouteTypes {
     | '/social/equipe'
     | '/social/geral'
     | '/social/historico'
+    | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/publicacoes'
     | '/social/relacionamento'
@@ -255,6 +265,7 @@ export interface FileRouteTypes {
     | '/social/equipe'
     | '/social/geral'
     | '/social/historico'
+    | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/publicacoes'
     | '/social/relacionamento'
@@ -279,6 +290,7 @@ export interface FileRouteTypes {
     | '/social/equipe'
     | '/social/geral'
     | '/social/historico'
+    | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/publicacoes'
     | '/social/relacionamento'
@@ -395,6 +407,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SocialImpulsionamentosRouteImport
       parentRoute: typeof SocialRoute
     }
+    '/social/importar': {
+      id: '/social/importar'
+      path: '/importar'
+      fullPath: '/social/importar'
+      preLoaderRoute: typeof SocialImportarRouteImport
+      parentRoute: typeof SocialRoute
+    }
     '/social/historico': {
       id: '/social/historico'
       path: '/historico'
@@ -467,6 +486,7 @@ interface SocialRouteChildren {
   SocialEquipeRoute: typeof SocialEquipeRoute
   SocialGeralRoute: typeof SocialGeralRoute
   SocialHistoricoRoute: typeof SocialHistoricoRoute
+  SocialImportarRoute: typeof SocialImportarRoute
   SocialImpulsionamentosRoute: typeof SocialImpulsionamentosRoute
   SocialPublicacoesRoute: typeof SocialPublicacoesRoute
   SocialRelacionamentoRoute: typeof SocialRelacionamentoRoute
@@ -482,6 +502,7 @@ const SocialRouteChildren: SocialRouteChildren = {
   SocialEquipeRoute: SocialEquipeRoute,
   SocialGeralRoute: SocialGeralRoute,
   SocialHistoricoRoute: SocialHistoricoRoute,
+  SocialImportarRoute: SocialImportarRoute,
   SocialImpulsionamentosRoute: SocialImpulsionamentosRoute,
   SocialPublicacoesRoute: SocialPublicacoesRoute,
   SocialRelacionamentoRoute: SocialRelacionamentoRoute,

@@ -65,6 +65,7 @@ import {
 import { anotar, consultar, consultarTudo, type NovoEvento } from "@/lib/social/historico.server";
 import { ACOES_CONHECIDAS, resumirPorPessoa, type AcaoHistorico } from "@/lib/social/historico";
 import { recomendar, resumirCanais } from "@/lib/social/recomendacoes";
+import { aplicarPlano, montarPlano } from "@/lib/social/importacao";
 import { gerarRelatorioPdf } from "@/lib/social/pdf/relatorio";
 import { paraBase64 } from "@/lib/social/pdf/documento";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
@@ -2548,3 +2549,100 @@ function nomeDeArquivo(titulo: string): string {
       .slice(0, 60) || "relatorio"
   );
 }
+
+// ---------------------------------------------------------------------------
+// Importação de histórico por planilha
+// ---------------------------------------------------------------------------
+
+const arquivoSchema = z.object({
+  accountId: z.string(),
+  // Um ano de histórico diário em CSV fica na casa das dezenas de kB; o teto
+  // existe para uma planilha errada não virar uma requisição de 50 MB.
+  conteudo: z.string().min(1).max(4_000_000),
+});
+
+/**
+ * Lê a planilha e devolve o que *seria* gravado, sem gravar nada.
+ *
+ * A conferência antes da gravação não é cerimônia: importar sobrescreve dias e
+ * pode deslocar um histórico inteiro se a data vier em outra ordem. Mostrar o
+ * plano é o que transforma um erro irreversível em uma pergunta.
+ */
+export const conferirImportacao = createServerFn({ method: "POST" })
+  .inputValidator(arquivoSchema)
+  .handler(async ({ data }) => {
+    await exigirConta(data.accountId);
+    const db = getDb();
+    const existentes = (db.metrics.get(data.accountId) ?? []).map((dia) => dia.date);
+
+    const plano = montarPlano(data.conteudo, existentes);
+
+    return {
+      plano,
+      // Uma amostra do que vai entrar, para conferir de olho antes de mandar.
+      amostra: plano.linhas.slice(0, 8),
+    };
+  });
+
+/**
+ * Grava o histórico da planilha.
+ *
+ * O arquivo é lido de novo aqui em vez de receber o plano pronto do navegador:
+ * um plano que chega pela requisição é um plano que pode ter sido editado no
+ * caminho, e este é o ponto em que dado do cliente é reescrito em massa.
+ */
+export const importarHistorico = createServerFn({ method: "POST" })
+  .inputValidator(arquivoSchema.extend({ nomeDoArquivo: z.string().max(200).default("planilha") }))
+  .handler(async ({ data }) => {
+    const usuario = await exigirConta(data.accountId);
+    const db = getDb();
+    const conta = db.accounts.find((candidata) => candidata.id === data.accountId)!;
+
+    const existentes = (db.metrics.get(data.accountId) ?? []).map((dia) => dia.date);
+    const plano = montarPlano(data.conteudo, existentes);
+
+    if (!plano.utilizavel) {
+      return { ok: false as const, plano, erro: "A planilha não tem o mínimo para ser importada." };
+    }
+
+    db.metrics.set(data.accountId, aplicarPlano(db.metrics.get(data.accountId) ?? [], plano));
+
+    // Um registro por dia importado, para a pergunta "de onde veio este número?"
+    // continuar tendo resposta depois — a mesma que a leitura manual dá.
+    const agora = new Date().toISOString();
+    const autor = `${usuario.name} (planilha: ${data.nomeDoArquivo})`;
+    for (const linha of plano.linhas) {
+      db.atualizacoes.push({
+        id: nextId("atual"),
+        accountId: data.accountId,
+        date: linha.date,
+        registradaEm: agora,
+        autor,
+        valores: linha.valores,
+      });
+    }
+
+    conta.lastSyncAt = agora;
+    // O acompanhamento passa a começar no dia mais antigo importado, se ele for
+    // anterior ao que estava registrado — senão a curva começaria depois do
+    // próprio histórico.
+    if (plano.primeiroDia && plano.primeiroDia < conta.trackingSince) {
+      conta.trackingSince = plano.primeiroDia;
+    }
+
+    anotarDe(usuario, {
+      acao: "historico_importado",
+      projetoId: conta.projectId,
+      alvoId: conta.id,
+      alvoRotulo: rotuloDaConta(conta.id),
+      detalhes: {
+        arquivo: data.nomeDoArquivo,
+        dias: plano.linhas.length,
+        reescritos: plano.conflitos.length,
+        periodo: `${plano.primeiroDia} a ${plano.ultimoDia}`,
+      },
+    });
+
+    const gravacao = await persistir();
+    return { ok: true as const, plano, gravacao };
+  });

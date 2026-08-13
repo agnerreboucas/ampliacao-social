@@ -32,6 +32,7 @@ export type AcaoHistorico =
   | "leitura_registrada"
   | "sincronizacao_rede"
   | "sincronizacao_paga"
+  | "historico_importado"
   // Contas
   | "conta_conectada"
   | "conta_desconectada"
@@ -80,6 +81,12 @@ export const ACOES: Record<
   },
   sincronizacao_rede: { verbo: "sincronizou com a rede", area: "Números", peso: "normal" },
   sincronizacao_paga: { verbo: "sincronizou a mídia paga", area: "Números", peso: "normal" },
+  historico_importado: {
+    verbo: "importou histórico por planilha",
+    area: "Números",
+    // Reescreve muitos dias de uma vez: é a ação de números com maior alcance.
+    peso: "atencao",
+  },
 
   conta_conectada: { verbo: "conectou uma conta", area: "Contas", peso: "atencao" },
   conta_desconectada: { verbo: "desconectou uma conta", area: "Contas", peso: "atencao" },

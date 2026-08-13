@@ -13,6 +13,7 @@ import {
   Radar,
   Rocket,
   Send,
+  Upload,
   Users,
 } from "lucide-react";
 import { useEffect } from "react";
@@ -91,6 +92,7 @@ function SocialShell() {
     { to: "/social/geral", label: "Visão geral", icon: Radar, ability: "metricas" },
     { to: "/social/contas", label: "Contas", icon: Link2, ability: "metricas" },
     { to: "/social/atualizar", label: "Atualizar números", icon: PencilLine, ability: "metricas" },
+    { to: "/social/importar", label: "Importar histórico", icon: Upload, ability: "metricas" },
     { to: "/social/publicacoes", label: "Publicações", icon: Send, ability: "publicar" },
     { to: "/social/impulsionamentos", label: "Impulsionar", icon: Rocket, ability: "impulsionar" },
     {
