@@ -45,7 +45,7 @@ const campoEmail = pagina.getByLabel(/e-mail/i);
 if ((await campoEmail.count()) === 0) {
   erros.push("a tela de entrada não apareceu");
 } else {
-  await campoEmail.fill("ana@ampliacao.com.br");
+  await campoEmail.fill(process.env.EMAIL ?? "campanha.neoncunha@gmail.com");
   await pagina.getByLabel(/senha/i).fill("qualquer-coisa");
   await pagina.getByRole("button", { name: /entrar/i }).click();
   await pagina.waitForTimeout(3000);
