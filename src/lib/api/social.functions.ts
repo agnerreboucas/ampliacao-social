@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
 import {
@@ -181,7 +180,10 @@ function projetoDaConta(accountId: string): string | null {
  * são os novos que passam a ser fortes.
  */
 function gerarTokenDeCompartilhamento(): string {
-  const bytes = randomBytes(16);
+  // `crypto.getRandomValues` em vez de `node:crypto`: é o mesmo gerador
+  // criptográfico, existe no Node e no navegador, e mantém este arquivo
+  // utilizável na demonstração em HTML único, que roda sem servidor.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
   let valor = 0n;
   for (const byte of bytes) valor = (valor << 8n) | BigInt(byte);
   return valor.toString(36).padStart(25, "0");
@@ -681,8 +683,60 @@ export const obterPainel = createServerFn({ method: "POST" })
         (boost) =>
           boost.status === "ativo" && accounts.some((account) => account.id === boost.accountId),
       ).length,
+      // Um bloco por rede, para o cartão de cada uma no painel. Agrupar aqui e
+      // não na tela evita mandar o histórico inteiro de cada conta pela rede só
+      // para a tela somá-lo de novo.
+      redes: resumirRedes(accounts, period),
     };
   });
+
+/**
+ * Consolida os canais por rede social, com a curva de cada uma.
+ *
+ * O agrupamento é por rede, não por perfil, porque é assim que a pergunta
+ * costuma vir: "como está o Instagram?", e não "como está cada um dos três
+ * perfis de Instagram?". O detalhe por perfil continua a um clique.
+ */
+function resumirRedes(contas: SocialAccount[], period: PeriodKey) {
+  const db = getDb();
+  const porRede = new Map<NetworkId, SocialAccount[]>();
+
+  for (const conta of contas) {
+    porRede.set(conta.networkId, [...(porRede.get(conta.networkId) ?? []), conta]);
+  }
+
+  return [...porRede.entries()]
+    .map(([networkId, contasDaRede]) => {
+      const juntas = mergeSeries(
+        contasDaRede.map((conta) => slicePeriod(db.metrics.get(conta.id) ?? [], period)),
+      );
+      const resumo = summarize(juntas, "tudo");
+      const split = splitOrganicPaid(juntas);
+
+      return {
+        networkId,
+        contas: contasDaRede.length,
+        // Uma conexão com problema pesa mais que o número bonito: é ela que
+        // explica por que o número parou de crescer.
+        comProblema: contasDaRede.filter((conta) => conta.status !== "ativa").length,
+        resumo,
+        split,
+        // Poucos pontos de propósito: é uma linha de tendência do tamanho de um
+        // cartão, não um gráfico para ler valores.
+        faisca: buildSeries(juntas, 24).map((ponto) => ponto.followers),
+        publicacoes: db.posts.filter(
+          (post) =>
+            post.status === "publicado" &&
+            post.accountIds.some((id) => contasDaRede.some((conta) => conta.id === id)),
+        ).length,
+        pendentes: db.inbox.filter(
+          (item) =>
+            item.status === "pendente" && contasDaRede.some((conta) => conta.id === item.accountId),
+        ).length,
+      };
+    })
+    .sort((a, b) => b.resumo.followers - a.resumo.followers);
+}
 
 /** Detalhe de uma conta: curva desde o início, orgânico x pago e público. */
 export const obterConta = createServerFn({ method: "POST" })
@@ -2645,4 +2699,73 @@ export const importarHistorico = createServerFn({ method: "POST" })
 
     const gravacao = await persistir();
     return { ok: true as const, plano, gravacao };
+  });
+
+/**
+ * Tudo de uma rede social específica.
+ *
+ * É o segundo nível do painel: o cartão da rede leva até aqui, e daqui cada
+ * perfil leva ao próprio detalhe. Três níveis, cada um respondendo uma pergunta
+ * mais estreita que o anterior.
+ */
+export const obterRede = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      networkId: z.enum(["instagram", "facebook", "tiktok", "linkedin", "youtube"]),
+      projectId: z.string().optional(),
+      period: periodSchema,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const permitidas = await contasPermitidas(data.projectId);
+    const contas = permitidas.filter((conta) => conta.networkId === data.networkId);
+    const period = data.period as PeriodKey;
+
+    const metricasPorConta = new Map(
+      contas.map((conta) => [conta.id, db.metrics.get(conta.id) ?? []]),
+    );
+    const juntas = mergeSeries(
+      contas.map((conta) => slicePeriod(metricasPorConta.get(conta.id) ?? [], period)),
+    );
+    const idsDaRede = new Set(contas.map((conta) => conta.id));
+
+    const posts = db.posts
+      .filter((post) => post.accountIds.some((id) => idsDaRede.has(id)))
+      .sort(sortPostsByRecency);
+
+    const pendentes = db.inbox.filter(
+      (item) => item.status === "pendente" && idsDaRede.has(item.accountId),
+    );
+
+    return {
+      networkId: data.networkId as NetworkId,
+      period,
+      contas: contas.map((conta) => accountSummary(conta, period)),
+      canais: resumirCanais(contas, metricasPorConta, period),
+      resumo: summarize(juntas, "tudo"),
+      split: splitOrganicPaid(juntas),
+      serie: buildSeries(juntas),
+      publicadas: posts.filter((post) => post.status === "publicado").slice(0, 6),
+      naFila: posts.filter(
+        (post) => post.status === "agendado" || post.status === "aguardando_aprovacao",
+      ).length,
+      impulsionamentos: db.boosts.filter((boost) => idsDaRede.has(boost.accountId)).length,
+      pendentes: pendentes.length,
+      // As recomendações desta rede só: no detalhe, conselho sobre outra rede
+      // seria ruído.
+      recomendacoes: recomendar({
+        contas,
+        metricasPorConta,
+        posts,
+        period,
+        interacoesPendentes: pendentes.length,
+        pendenteMaisAntigaEm: pendentes.reduce<string | null>(
+          (antiga, item) =>
+            antiga === null || item.receivedAt < antiga ? item.receivedAt : antiga,
+          null,
+        ),
+        agoraMs: Date.now(),
+      }),
+    };
   });

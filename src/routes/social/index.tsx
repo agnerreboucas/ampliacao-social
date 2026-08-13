@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   MessagesSquare,
   MousePointerClick,
+  Radar,
   Rocket,
   Sparkles,
   TrendingUp,
@@ -19,6 +20,7 @@ import {
 import { useState } from "react";
 
 import { detalharPeriodo, obterPainel } from "@/lib/api/social.functions";
+import { CartaoDeRede } from "@/components/social/cartao-rede";
 import { GrowthChart, ReachChart, SplitDonut } from "@/components/social/charts";
 import {
   AccountAvatar,
@@ -117,6 +119,18 @@ function PainelPage() {
               icon={BadgeDollarSign}
             />
           </div>
+
+          <SectionCard
+            title="Suas redes"
+            description="Cada rede com o próprio quadro. Clique em uma para abrir o detalhe dela."
+            icon={Radar}
+          >
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {data.redes.map((rede) => (
+                <CartaoDeRede key={rede.networkId} {...rede} />
+              ))}
+            </div>
+          </SectionCard>
 
           <div className="grid items-start gap-4 lg:grid-cols-3">
             <SectionCard

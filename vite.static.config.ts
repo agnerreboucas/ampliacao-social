@@ -66,6 +66,31 @@ export default defineConfig({
         find: /^\.\/senha\.server$/,
         replacement: resolvePath("./src/static/senha-stub.ts"),
       },
+      // A sessão real mora num cookie selado pelo servidor. Na demonstração ela
+      // vive numa variável — mas a *regra* de autorização é copiada, não
+      // afrouxada: um gestor continua sem ver projeto que não é dele.
+      {
+        find: /^@\/lib\/social\/sessao\.server$/,
+        replacement: resolvePath("./src/static/sessao-stub.ts"),
+      },
+      {
+        find: /^\.\/sessao\.server$/,
+        replacement: resolvePath("./src/static/sessao-stub.ts"),
+      },
+      // O histórico grava no Postgres; aqui fica em memória, e a tela avisa
+      // disso sozinha — é o mesmo estado de "sem banco configurado".
+      {
+        find: /^@\/lib\/social\/historico\.server$/,
+        replacement: resolvePath("./src/static/historico-stub.ts"),
+      },
+      {
+        find: /^\.\/historico\.server$/,
+        replacement: resolvePath("./src/static/historico-stub.ts"),
+      },
+      {
+        find: /^@\/lib\/social\/banco\/postgres\.server$/,
+        replacement: resolvePath("./src/static/servidor-stub.ts"),
+      },
       { find: /^@\//, replacement: `${resolvePath("./src")}/` },
     ],
     dedupe: ["react", "react-dom", "@tanstack/react-router", "@tanstack/react-query"],
