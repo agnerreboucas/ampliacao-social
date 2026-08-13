@@ -1,5 +1,5 @@
 {
-  "name": "ampliacao-social",
+  "name": "tanstack_start_ts",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -11,10 +11,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
-    "build:static": "vite build --config vite.static.config.ts",
-    "build:html": "vite build --config vite.static.config.ts && node --experimental-strip-types scripts/build-html.mjs",
     "senha": "node --experimental-strip-types scripts/definir-senha.mjs",
-    "contraste": "node scripts/verificar-contraste.mjs"
+    "contraste": "node scripts/verificar-contraste.mjs",
+    "build:node": "NITRO_PRESET=node-server vite build",
+    "start": "node dist/server/index.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -89,6 +89,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "nitro": "3.0.260429-beta",
+    "playwright-core": "^1.62.1",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",

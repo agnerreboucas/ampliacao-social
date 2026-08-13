@@ -57,6 +57,40 @@ function chaveDaSessao(): string {
   return "ampliacao-demonstracao-chave-de-sessao-sem-valor";
 }
 
+/**
+ * O cookie exige HTTPS?
+ *
+ * Em desenvolvimento, não: o endereço é http://localhost e exigir TLS ali
+ * impediria o cookie de ser gravado — o login pareceria simplesmente não
+ * funcionar, sem erro nenhum.
+ *
+ * Na build de produção, sim, e é uma decisão do **build**, não da execução: o
+ * Vite substitui `process.env.NODE_ENV` por "production" ao empacotar, então
+ * este valor vira uma constante dentro do pacote. É o comportamento certo —
+ * sessão trafegando em claro é sessão roubável na primeira rede aberta.
+ *
+ * A consequência prática precisa ser dita: **servir a build de produção em
+ * http puro quebra o login em silêncio**. O navegador não devolve um cookie
+ * `Secure` por http, e cada ação responde "sua sessão expirou" sem qualquer
+ * pista da causa.
+ *
+ * `SESSAO_SEM_TLS=sim` desliga a exigência, com aviso no log. Existe por um
+ * motivo específico: conferir a build de produção na própria máquina antes de
+ * publicá-la. Não é para servidor de verdade — daí o aviso ser barulhento.
+ */
+function exigirTls(): boolean {
+  const empacotadoParaProducao = process.env.NODE_ENV === "production";
+  if (!empacotadoParaProducao) return false;
+
+  if (process.env.SESSAO_SEM_TLS === "sim") {
+    console.warn(
+      "SESSAO_SEM_TLS=sim: o cookie de sessão está sendo emitido sem exigir HTTPS. Use isto só para conferir a build na própria máquina — em servidor exposto, a sessão trafega em claro.",
+    );
+    return false;
+  }
+  return true;
+}
+
 function configuracao() {
   return {
     name: NOME_DO_COOKIE,
@@ -66,9 +100,7 @@ function configuracao() {
       httpOnly: true,
       sameSite: "lax" as const,
       path: "/",
-      // Em desenvolvimento o endereço é http://localhost; exigir HTTPS ali
-      // impediria o cookie de ser gravado e o login pareceria não funcionar.
-      secure: process.env.NODE_ENV === "production",
+      secure: exigirTls(),
     },
   };
 }
