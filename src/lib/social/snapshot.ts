@@ -3,6 +3,7 @@ import type {
   AudienceInsight,
   Boost,
   DailyMetric,
+  Evento,
   InboxItem,
   PlatformUser,
   Post,
@@ -44,6 +45,7 @@ export type EstadoPersistivel = {
   posts: Post[];
   boosts: Boost[];
   inbox: InboxItem[];
+  eventos: Evento[];
   reports: Report[];
   atualizacoes: AtualizacaoManual[];
 };
@@ -60,6 +62,7 @@ export type Snapshot = {
   posts: Post[];
   boosts: Boost[];
   inbox: InboxItem[];
+  eventos: Evento[];
   reports: Report[];
   atualizacoes: AtualizacaoManual[];
 };
@@ -87,6 +90,7 @@ export function paraSnapshot(estado: EstadoPersistivel, geradoEm = new Date()): 
     posts: estado.posts,
     boosts: estado.boosts,
     inbox: estado.inbox,
+    eventos: estado.eventos,
     reports: estado.reports,
     atualizacoes: estado.atualizacoes,
   };
@@ -131,6 +135,9 @@ export function deSnapshot(bruto: unknown): EstadoPersistivel {
     posts: dados.posts ?? [],
     boosts: dados.boosts ?? [],
     inbox: dados.inbox ?? [],
+    // Arquivo gravado antes de a agenda existir volta sem o campo. Vazio é a
+    // leitura certa: a campanha não tinha compromissos cadastrados ainda.
+    eventos: dados.eventos ?? [],
     reports: dados.reports ?? [],
     atualizacoes: dados.atualizacoes ?? [],
   };

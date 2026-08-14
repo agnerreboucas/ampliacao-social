@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   BarChart3,
+  CalendarDays,
   ChevronDown,
   FileBarChart,
   History,
@@ -95,6 +96,7 @@ function SocialShell() {
   const role = session.user.role;
   const items: NavItem[] = [
     { to: "/social", label: "Painel", icon: LayoutDashboard, ability: "metricas" },
+    { to: "/social/agenda", label: "Agenda", icon: CalendarDays, ability: "agenda" },
     { to: "/social/contas", label: "Contas", icon: Link2, ability: "metricas" },
     { to: "/social/atualizar", label: "Atualizar números", icon: PencilLine, ability: "metricas" },
     { to: "/social/importar", label: "Importar histórico", icon: Upload, ability: "metricas" },

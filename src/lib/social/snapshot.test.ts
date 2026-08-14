@@ -50,6 +50,7 @@ const estado: EstadoPersistivel = {
   posts: [],
   boosts: [],
   inbox: [],
+  eventos: [],
   reports: [],
   atualizacoes: [
     {

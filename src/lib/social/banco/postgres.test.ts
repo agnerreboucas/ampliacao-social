@@ -137,6 +137,7 @@ function estadoDeExemplo(): EstadoPersistivel {
       },
     ],
     inbox: [interacao],
+    eventos: [],
     reports: [
       {
         id: "rep-1",

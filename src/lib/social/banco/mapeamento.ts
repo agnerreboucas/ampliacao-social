@@ -7,6 +7,7 @@ import type {
   PlatformUser,
   Post,
   Project,
+  Evento,
   Report,
   SocialAccount,
 } from "../types.ts";
@@ -330,6 +331,49 @@ export function deInteracao(item: InboxItem): unknown[] {
     item.assignedTo,
     item.relacao,
     item.interacoes,
+  ];
+}
+
+export function paraEvento(linha: Linha): Evento {
+  const extras = (linha.dados_extras ?? {}) as { postIds?: string[] };
+  return {
+    id: texto(linha.id),
+    projectId: texto(linha.projeto_id),
+    titulo: texto(linha.titulo),
+    descricao: textoOuNulo(linha.descricao),
+    tipo: texto(linha.tipo) as Evento["tipo"],
+    comecaEm: instante(linha.comeca_em),
+    terminaEm: linha.termina_em ? instante(linha.termina_em) : null,
+    diaInteiro: Boolean(linha.dia_inteiro),
+    local: textoOuNulo(linha.local),
+    municipioCodigo: textoOuNulo(linha.municipio_codigo),
+    responsavel: textoOuNulo(linha.responsavel),
+    postIds: extras.postIds ?? [],
+    origem: texto(linha.origem) as Evento["origem"],
+    uidExterno: textoOuNulo(linha.uid_externo) ?? undefined,
+    criadoPor: texto(linha.criado_por),
+    criadoEm: instante(linha.criado_em),
+  };
+}
+
+export function deEvento(evento: Evento): unknown[] {
+  return [
+    evento.id,
+    evento.projectId,
+    evento.titulo,
+    evento.descricao,
+    evento.tipo,
+    evento.comecaEm,
+    evento.terminaEm,
+    evento.diaInteiro,
+    evento.local,
+    evento.municipioCodigo,
+    evento.responsavel,
+    evento.origem,
+    evento.uidExterno ?? null,
+    evento.criadoPor,
+    evento.criadoEm,
+    JSON.stringify({ postIds: evento.postIds }),
   ];
 }
 

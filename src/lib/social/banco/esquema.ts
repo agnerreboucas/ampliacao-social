@@ -153,6 +153,37 @@ create table if not exists interacoes (
 create index if not exists interacoes_por_conta on interacoes (conta_id, recebida_em desc);
 create index if not exists interacoes_por_autor on interacoes (autor_identificador);
 
+-- Compromissos da campanha no calendário.
+--
+-- A coluna dados_extras guarda a lista de publicações vinculadas como JSON em
+-- vez de uma tabela de ligação: a lista é curta, sempre lida junto com o evento,
+-- e nunca consultada de trás para frente ("quais eventos citam esta peça?").
+-- Uma tabela a mais aqui custaria duas consultas para não responder pergunta
+-- nenhuma.
+create table if not exists eventos (
+  id text primary key,
+  projeto_id text not null references projetos (id) on delete cascade,
+  titulo text not null,
+  descricao text,
+  tipo text not null,
+  comeca_em timestamptz not null,
+  termina_em timestamptz,
+  dia_inteiro boolean not null default false,
+  local text,
+  municipio_codigo text,
+  responsavel text,
+  origem text not null default 'manual',
+  uid_externo text,
+  criado_por text not null,
+  criado_em timestamptz not null,
+  dados_extras jsonb not null default '{}'::jsonb
+);
+
+create index if not exists eventos_por_projeto on eventos (projeto_id, comeca_em);
+-- O identificador externo é o que impede a reimportação de duplicar a agenda.
+create unique index if not exists eventos_por_uid on eventos (projeto_id, uid_externo)
+  where uid_externo is not null;
+
 create table if not exists respostas (
   id text primary key,
   interacao_id text not null references interacoes (id) on delete cascade,
@@ -251,6 +282,7 @@ alter table usuarios add column if not exists senha_hash text;
 export const TABELAS_EM_ORDEM_DE_LIMPEZA = [
   "respostas",
   "interacoes",
+  "eventos",
   "relatorio_contas",
   "relatorios",
   "impulsionamentos",

@@ -93,6 +93,7 @@ if ((await campoEmail.count()) === 0) {
   // --- Percorrer as demais telas --------------------------------------------
 
   const telas = [
+    ["Agenda", /Compromissos cadastrados|Quadro de produção/i],
     ["Contas", /conta|perfil/i],
     ["Importar histórico", /Traga a planilha|Escolha a conta/i],
     ["Conteúdo", /Peça a peça|Por formato/i],

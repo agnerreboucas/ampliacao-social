@@ -8,6 +8,7 @@ import type {
   Boost,
   CelulaDemografica,
   DailyMetric,
+  Evento,
   InboxItem,
   NetworkId,
   PlatformUser,
@@ -870,6 +871,109 @@ function montarInteracoes(): InboxItem[] {
   });
 }
 
+/**
+ * A agenda da campanha.
+ *
+ * Cobre os quatro casos que a tela precisa saber desenhar: o compromisso que já
+ * aconteceu e gerou peça, o de hoje, o prazo de produção e o futuro que existe
+ * só como data. Sem o último, ninguém enxerga que o calendário serve para
+ * planejar e não só para registrar.
+ */
+function montarEventos(pecas: Post[]): Evento[] {
+  const publicadas = pecas.filter((peca) => peca.status === "publicado");
+  const porTrecho = (parte: string) =>
+    publicadas.filter((peca) => peca.caption.includes(parte)).map((peca) => peca.id);
+
+  const compromisso = (
+    id: string,
+    titulo: string,
+    tipo: Evento["tipo"],
+    atras: number,
+    hora: number,
+    local: string | null,
+    postIds: string[] = [],
+    descricao: string | null = null,
+  ): Evento => ({
+    id,
+    projectId: PROJETO_ID,
+    titulo,
+    descricao,
+    tipo,
+    comecaEm: naHora(somarDias(HOJE, -atras), hora),
+    terminaEm: null,
+    diaInteiro: false,
+    local,
+    municipioCodigo: null,
+    responsavel: null,
+    postIds,
+    origem: "manual",
+    criadoPor: "user-conteudo",
+    criadoEm: somarDias(HOJE, -40).toISOString(),
+  });
+
+  return [
+    compromisso(
+      "ev-caminhada",
+      "Caminhada na feira da Vila Nova",
+      "agenda",
+      2,
+      8,
+      "São Paulo",
+      porTrecho("Caminhada na feira"),
+      "Ponto de encontro na entrada da feira. Levar material de panfletagem.",
+    ),
+    compromisso(
+      "ev-creche",
+      "Reunião com as mães da creche",
+      "agenda",
+      6,
+      18,
+      "São Paulo",
+      porTrecho("creche do Jardim União"),
+    ),
+    compromisso(
+      "ev-depoimento",
+      "Gravação do depoimento da dona Marlene",
+      "gravacao",
+      9,
+      14,
+      "Guarulhos",
+      porTrecho("Dona Marlene"),
+    ),
+    compromisso("ev-pauta", "Reunião de pauta da semana", "interno", 0, 10, null),
+    compromisso(
+      "ev-comerciantes",
+      "Reunião com comerciantes da zona leste",
+      "agenda",
+      -1,
+      19,
+      "São Paulo",
+      [],
+      "Salão da associação da Vila Curuçá.",
+    ),
+    compromisso(
+      "ev-prazo-infancia",
+      "Prazo do carrossel da primeira infância",
+      "prazo",
+      -1,
+      18,
+      null,
+    ),
+    compromisso(
+      "ev-live",
+      "Live sobre educação e fila da creche",
+      "agenda",
+      -2,
+      20,
+      null,
+      [],
+      "Transmissão pelo Instagram e YouTube.",
+    ),
+    compromisso("ev-caravana", "Caravana pelo interior", "agenda", -6, 7, "Campinas"),
+    compromisso("ev-abc", "Encontro com apoiadores no ABC", "agenda", -9, 19, "Santo André"),
+  ];
+}
+
 // --- Montagem ---------------------------------------------------------------
 
 const metrics = new Map<string, DailyMetric[]>();
@@ -892,6 +996,7 @@ const estado: EstadoPersistivel = {
   posts,
   boosts: montarImpulsionamentos(posts),
   inbox: montarInteracoes(),
+  eventos: montarEventos(posts),
   reports: [],
   atualizacoes: [],
 };

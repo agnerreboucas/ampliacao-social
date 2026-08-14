@@ -1,0 +1,314 @@
+import { FASES_DE_PRODUCAO } from "./types.ts";
+import type { Evento, InboxItem, Post, PostStatus } from "./types";
+
+/**
+ * A agenda da campanha: eventos, produção e publicação no mesmo eixo do tempo.
+ *
+ * A plataforma tinha uma lista de publicações e nada mais. Quem organiza uma
+ * campanha não pensa em lista: pensa em **dias**. Sábado tem caminhada, e da
+ * caminhada saem três peças que precisam estar prontas até sexta. Nenhuma
+ * dessas três frases cabia no modelo antigo.
+ *
+ * Três visões, porque são três perguntas diferentes e não vale forçá-las numa
+ * tela só:
+ *
+ * **Produção** — em que pé está cada peça. É o quadro, com uma coluna por fase.
+ * **Publicação** — o que vai ao ar e quando. É o calendário, por dia e hora.
+ * **Tudo** — a semana como ela é: evento, produção e publicação misturados,
+ * porque é assim que a semana chega para quem trabalha nela.
+ *
+ * A decisão que vale para o módulo inteiro: **o dia é a unidade**. Toda função
+ * daqui agrupa por dia (`YYYY-MM-DD`), e não por semana nem por período — é o
+ * dia que a pessoa clica, e é do dia que ela quer a lista inteira.
+ *
+ * Módulo puro.
+ */
+
+/** A chave de um dia, no fuso de quem está olhando. */
+export function chaveDoDia(data: Date | string): string {
+  const d = typeof data === "string" ? new Date(data) : data;
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
+}
+
+export function lerDia(chave: string): Date {
+  const [ano, mes, dia] = chave.split("-").map(Number);
+  return new Date(ano, mes - 1, dia);
+}
+
+function somarDias(data: Date, dias: number): Date {
+  const proxima = new Date(data);
+  proxima.setDate(proxima.getDate() + dias);
+  return proxima;
+}
+
+/**
+ * O que uma peça faz num dia.
+ *
+ * A mesma publicação aparece em dias diferentes por motivos diferentes: no dia
+ * do prazo ela é trabalho a fazer; no dia da publicação ela é entrega. Separar
+ * os dois papéis é o que impede o calendário de mentir sobre a carga da semana.
+ */
+export type PapelNoDia = "evento" | "producao" | "agendado" | "publicado";
+
+export type ItemDoDia =
+  | { papel: "evento"; dia: string; evento: Evento }
+  | { papel: "producao" | "agendado" | "publicado"; dia: string; post: Post };
+
+/**
+ * Coloca cada peça e cada evento no dia a que pertencem.
+ *
+ * Uma peça publicada entra pelo dia da publicação. Uma agendada, pelo dia
+ * marcado. Uma em produção sem data não entra em dia nenhum — e é isso que a
+ * separa: ela mora no quadro, não no calendário, e forçá-la para "hoje" encheria
+ * o dia de hoje com trabalho que não vence hoje.
+ */
+export function distribuirPorDia(eventos: Evento[], posts: Post[]): Map<string, ItemDoDia[]> {
+  const dias = new Map<string, ItemDoDia[]>();
+
+  const guardar = (dia: string, item: ItemDoDia) => {
+    dias.set(dia, [...(dias.get(dia) ?? []), item]);
+  };
+
+  for (const evento of eventos) {
+    const dia = chaveDoDia(evento.comecaEm);
+    guardar(dia, { papel: "evento", dia, evento });
+
+    // Evento de vários dias aparece em cada um deles: quem olha a quarta-feira
+    // de uma caravana de três dias precisa vê-la ali.
+    if (evento.terminaEm) {
+      const fim = chaveDoDia(evento.terminaEm);
+      let cursor = somarDias(lerDia(dia), 1);
+      while (chaveDoDia(cursor) <= fim) {
+        const chave = chaveDoDia(cursor);
+        guardar(chave, { papel: "evento", dia: chave, evento });
+        cursor = somarDias(cursor, 1);
+      }
+    }
+  }
+
+  for (const post of posts) {
+    if (post.status === "publicado" && post.publishedAt) {
+      const dia = chaveDoDia(post.publishedAt);
+      guardar(dia, { papel: "publicado", dia, post });
+      continue;
+    }
+    if (post.scheduledFor) {
+      const dia = chaveDoDia(post.scheduledFor);
+      const papel = post.status === "agendado" ? "agendado" : "producao";
+      guardar(dia, { papel, dia, post });
+    }
+  }
+
+  return dias;
+}
+
+/** Tudo o que acontece num dia, na ordem em que acontece. */
+export function itensDoDia(dia: string, eventos: Evento[], posts: Post[]): ItemDoDia[] {
+  const doDia = distribuirPorDia(eventos, posts).get(dia) ?? [];
+
+  const quando = (item: ItemDoDia): string =>
+    item.papel === "evento"
+      ? item.evento.comecaEm
+      : (item.post.publishedAt ?? item.post.scheduledFor ?? "");
+
+  return [...doDia].sort((a, b) => quando(a).localeCompare(quando(b)));
+}
+
+export type ColunaDoQuadro = {
+  fase: Exclude<PostStatus, "falhou">;
+  posts: Post[];
+};
+
+/**
+ * O quadro de produção: uma coluna por fase, na ordem do trabalho.
+ *
+ * Colunas vazias continuam aparecendo. Um quadro que esconde a coluna vazia
+ * esconde justamente a informação de que ninguém está produzindo nada — que é
+ * quando alguém precisa saber.
+ */
+export function montarQuadro(posts: Post[]): ColunaDoQuadro[] {
+  return FASES_DE_PRODUCAO.map((fase) => ({
+    fase,
+    posts: posts
+      .filter((post) => post.status === fase)
+      .sort((a, b) =>
+        (a.scheduledFor ?? a.publishedAt ?? "9999").localeCompare(
+          b.scheduledFor ?? b.publishedAt ?? "9999",
+        ),
+      ),
+  }));
+}
+
+/** As transições que fazem sentido a partir de cada fase. */
+const PROXIMAS_FASES: Record<PostStatus, PostStatus[]> = {
+  ideia: ["rascunho"],
+  rascunho: ["ideia", "aguardando_aprovacao", "aprovado"],
+  aguardando_aprovacao: ["rascunho", "aprovado"],
+  aprovado: ["aguardando_aprovacao", "agendado", "publicado"],
+  agendado: ["aprovado", "publicado"],
+  // Publicado é fim de linha: despublicar não é operação que a rede ofereça de
+  // volta, e fingir que oferece produziria um estado que a plataforma não
+  // consegue sustentar.
+  publicado: [],
+  falhou: ["rascunho", "aprovado"],
+};
+
+export function podeMoverPara(de: PostStatus, para: PostStatus): boolean {
+  return PROXIMAS_FASES[de].includes(para);
+}
+
+export type ResumoDoDia = {
+  dia: string;
+  eventos: Evento[];
+  /** Peças que vão ao ar hoje, agendadas. */
+  publicaHoje: Post[];
+  /** Já foram publicadas hoje. */
+  publicadas: Post[];
+  /** Esperando alguém aprovar — a fila que trava o resto. */
+  esperandoAprovacao: Post[];
+  /** Em produção com prazo para hoje ou já vencido. */
+  produzindo: Post[];
+  /** Interações sem resposta. */
+  conversasPendentes: number;
+  /** Nada a fazer hoje: muda a tela inteira, então é decidido aqui. */
+  vazio: boolean;
+};
+
+/**
+ * O dia, do jeito que alguém quer receber ao acordar.
+ *
+ * A ordem dos campos é a ordem da urgência, e não é acaso: evento acontece com
+ * ou sem a plataforma; publicação agendada sai sozinha; aprovação pendente
+ * trava outra pessoa; produção depende de quem lê. Quem tiver trinta segundos
+ * lê os dois primeiros e já sabe o que o dia é.
+ */
+export function resumirDia(
+  dia: string,
+  eventos: Evento[],
+  posts: Post[],
+  inbox: InboxItem[] = [],
+): ResumoDoDia {
+  const noDia = (iso: string | null) => iso !== null && chaveDoDia(iso) === dia;
+
+  const doDia = eventos
+    .filter((evento) => {
+      const inicio = chaveDoDia(evento.comecaEm);
+      const fim = evento.terminaEm ? chaveDoDia(evento.terminaEm) : inicio;
+      return dia >= inicio && dia <= fim;
+    })
+    .sort((a, b) => a.comecaEm.localeCompare(b.comecaEm));
+
+  const publicaHoje = posts.filter(
+    (post) => post.status === "agendado" && noDia(post.scheduledFor),
+  );
+  const publicadas = posts.filter((post) => post.status === "publicado" && noDia(post.publishedAt));
+  const esperandoAprovacao = posts.filter((post) => post.status === "aguardando_aprovacao");
+
+  // "Atrasado" conta como produção de hoje: prazo vencido não some da lista, ou
+  // a peça esquecida fica esquecida.
+  const produzindo = posts.filter(
+    (post) =>
+      (post.status === "ideia" || post.status === "rascunho") &&
+      post.scheduledFor !== null &&
+      chaveDoDia(post.scheduledFor) <= dia,
+  );
+
+  const conversasPendentes = inbox.filter((item) => item.status === "pendente").length;
+
+  return {
+    dia,
+    eventos: doDia,
+    publicaHoje,
+    publicadas,
+    esperandoAprovacao,
+    produzindo,
+    conversasPendentes,
+    vazio:
+      doDia.length === 0 &&
+      publicaHoje.length === 0 &&
+      publicadas.length === 0 &&
+      esperandoAprovacao.length === 0 &&
+      produzindo.length === 0,
+  };
+}
+
+/**
+ * A grade do mês, começando no domingo e fechando a última semana.
+ *
+ * Devolve sempre semanas inteiras — 35 ou 42 dias — porque um calendário com a
+ * última linha pela metade quebra o alinhamento das colunas.
+ */
+export function gradeDoMes(ano: number, mes: number): string[] {
+  const primeiro = new Date(ano, mes, 1);
+  const inicio = somarDias(primeiro, -primeiro.getDay());
+
+  const ultimo = new Date(ano, mes + 1, 0);
+  const fim = somarDias(ultimo, 6 - ultimo.getDay());
+
+  const dias: string[] = [];
+  let cursor = inicio;
+  while (cursor <= fim) {
+    dias.push(chaveDoDia(cursor));
+    cursor = somarDias(cursor, 1);
+  }
+  return dias;
+}
+
+/** A semana de um dia, de domingo a sábado. */
+export function semanaDe(dia: string): string[] {
+  const data = lerDia(dia);
+  const domingo = somarDias(data, -data.getDay());
+  return Array.from({ length: 7 }, (_, i) => chaveDoDia(somarDias(domingo, i)));
+}
+
+const DIAS_DA_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const MESES = [
+  "janeiro",
+  "fevereiro",
+  "março",
+  "abril",
+  "maio",
+  "junho",
+  "julho",
+  "agosto",
+  "setembro",
+  "outubro",
+  "novembro",
+  "dezembro",
+];
+
+export function nomeDoDiaDaSemana(dia: string): string {
+  return DIAS_DA_SEMANA[lerDia(dia).getDay()];
+}
+
+export function nomeDoMes(mes: number): string {
+  return MESES[mes];
+}
+
+/** "sábado, 16 de agosto" — o dia como cabeçalho do painel expandido. */
+export function tituloDoDia(dia: string): string {
+  const data = lerDia(dia);
+  const porExtenso = [
+    "domingo",
+    "segunda-feira",
+    "terça-feira",
+    "quarta-feira",
+    "quinta-feira",
+    "sexta-feira",
+    "sábado",
+  ][data.getDay()];
+  return `${porExtenso}, ${data.getDate()} de ${MESES[data.getMonth()]}`;
+}
+
+/** A hora de um item, para a linha do tempo do dia. Nulo em dia inteiro. */
+export function horaDoItem(item: ItemDoDia): string | null {
+  if (item.papel === "evento") {
+    if (item.evento.diaInteiro) return null;
+    const data = new Date(item.evento.comecaEm);
+    return `${String(data.getHours()).padStart(2, "0")}:${String(data.getMinutes()).padStart(2, "0")}`;
+  }
+  const iso = item.post.publishedAt ?? item.post.scheduledFor;
+  if (!iso) return null;
+  const data = new Date(iso);
+  return `${String(data.getHours()).padStart(2, "0")}:${String(data.getMinutes()).padStart(2, "0")}`;
+}

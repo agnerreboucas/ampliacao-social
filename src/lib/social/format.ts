@@ -1,4 +1,11 @@
-import type { BoostObjective, BoostStatus, PeriodKey, PostStatus, UserRole } from "./types";
+import type {
+  BoostObjective,
+  BoostStatus,
+  PeriodKey,
+  PostStatus,
+  TipoDeEvento,
+  UserRole,
+} from "./types";
 
 const numberFormatter = new Intl.NumberFormat("pt-BR");
 const compactFormatter = new Intl.NumberFormat("pt-BR", {
@@ -67,6 +74,7 @@ export const PERIOD_LABELS: Record<PeriodKey, string> = {
 export const PERIOD_KEYS = Object.keys(PERIOD_LABELS) as PeriodKey[];
 
 export const POST_STATUS_LABELS: Record<PostStatus, string> = {
+  ideia: "Ideia",
   rascunho: "Rascunho",
   aguardando_aprovacao: "Aguardando aprovação",
   aprovado: "Aprovado",
@@ -82,6 +90,24 @@ export const POST_STATUS_LABELS: Record<PostStatus, string> = {
  * transformava "trafego" em "Trafego" na tela — errado em português e visível
  * para qualquer pessoa que ler.
  */
+/** As colunas do quadro, com o nome do trabalho e não o do estado. */
+export const FASE_LABELS: Record<PostStatus, string> = {
+  ideia: "Ideia",
+  rascunho: "Em produção",
+  aguardando_aprovacao: "Em revisão",
+  aprovado: "Aprovado",
+  agendado: "Agendado",
+  publicado: "Publicado",
+  falhou: "Falhou",
+};
+
+export const TIPO_DE_EVENTO_LABELS: Record<TipoDeEvento, string> = {
+  agenda: "Agenda pública",
+  gravacao: "Gravação",
+  prazo: "Prazo",
+  interno: "Interno",
+};
+
 export const BOOST_OBJECTIVE_LABELS: Record<BoostObjective, string> = {
   alcance: "Alcance",
   engajamento: "Engajamento",

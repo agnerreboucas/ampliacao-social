@@ -37,6 +37,7 @@ export const Route = createFileRoute("/social/publicacoes")({
 });
 
 const STATUS_TONES: Record<PostStatus, PillTone> = {
+  ideia: "neutro",
   rascunho: "neutro",
   aguardando_aprovacao: "atencao",
   aprovado: "destaque",

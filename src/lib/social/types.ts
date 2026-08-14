@@ -185,13 +185,81 @@ export type PostFormat = "imagem" | "carrossel" | "video" | "story";
 /** Formatos cujas métricas de interação são comparáveis entre si. */
 export const FORMATOS_DE_FEED: PostFormat[] = ["imagem", "carrossel", "video"];
 
+/**
+ * O ciclo de vida de uma peça, do que ela é antes de existir ao que ela vira.
+ *
+ * `ideia` é a pauta: o assunto já decidido e nada produzido ainda. Existe
+ * porque o quadro de produção precisa de uma coluna onde a semana é planejada
+ * — sem ela, a primeira coisa que alguém faz na plataforma é criar um rascunho
+ * vazio só para marcar lugar.
+ */
 export type PostStatus =
+  | "ideia"
   | "rascunho"
   | "aguardando_aprovacao"
   | "aprovado"
   | "agendado"
   | "publicado"
   | "falhou";
+
+/**
+ * As colunas do quadro de produção, na ordem em que o trabalho anda.
+ *
+ * `falhou` fica de fora de propósito: não é uma etapa do caminho, é um
+ * acidente que pode acontecer no fim dele — e vira marcador na peça, não
+ * coluna.
+ */
+export const FASES_DE_PRODUCAO: Exclude<PostStatus, "falhou">[] = [
+  "ideia",
+  "rascunho",
+  "aguardando_aprovacao",
+  "aprovado",
+  "agendado",
+  "publicado",
+];
+
+/** O tipo de compromisso da campanha. */
+export type TipoDeEvento = "agenda" | "gravacao" | "prazo" | "interno";
+
+/**
+ * Um compromisso da campanha no calendário.
+ *
+ * Evento não é publicação, e confundir os dois foi o que faltava aqui: a
+ * caminhada de sábado **acontece no mundo** e dela nascem três peças. Sem esta
+ * entidade, a plataforma só sabia das peças soltas e ninguém conseguia olhar a
+ * semana e entender o que ela era.
+ *
+ * `municipioCodigo` liga o compromisso ao mapa: um evento acontece numa cidade,
+ * e a cidade é a mesma do IPS e da segmentação.
+ */
+export type Evento = {
+  id: string;
+  projectId: string;
+  titulo: string;
+  descricao: string | null;
+  tipo: TipoDeEvento;
+  comecaEm: string; // ISO datetime
+  terminaEm: string | null;
+  diaInteiro: boolean;
+  /** Como a pessoa escreveria o lugar: "Feira da Vila Nova". */
+  local: string | null;
+  /** Código do IBGE, quando o lugar casa com um município do estado. */
+  municipioCodigo: string | null;
+  /** Quem responde pelo compromisso. */
+  responsavel: string | null;
+  /** Peças de conteúdo que nasceram deste evento. */
+  postIds: string[];
+  origem: "manual" | "importado";
+  /**
+   * O identificador que o calendário de origem deu ao evento.
+   *
+   * É o que permite reimportar o mesmo arquivo sem duplicar tudo — e atualizar
+   * um evento que mudou de horário em vez de criar um segundo.
+   */
+  uidExterno?: string;
+  criadoPor: string;
+  criadoEm: string;
+};
 
 export type PostMedia = {
   /** Quantidade de itens — 1 para imagem/vídeo, 2..n para carrossel. */

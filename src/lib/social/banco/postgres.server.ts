@@ -5,6 +5,7 @@ import {
   deAtualizacao,
   deConta,
   deImpulsionamento,
+  deEvento,
   deInteracao,
   dePublicacao,
   deProjeto,
@@ -13,6 +14,7 @@ import {
   paraAtualizacao,
   paraConta,
   paraImpulsionamento,
+  paraEvento,
   paraInteracao,
   paraMetrica,
   paraProjeto,
@@ -137,6 +139,7 @@ export async function carregarDoBanco(
     impulsionamentos,
     interacoes,
     respostas,
+    eventos,
     relatorios,
     relatorioContas,
     atualizacoes,
@@ -151,6 +154,7 @@ export async function carregarDoBanco(
     pool.query("select * from impulsionamentos order by iniciado_em desc"),
     pool.query("select * from interacoes order by recebida_em desc"),
     pool.query("select * from respostas order by interacao_id, ordem"),
+    pool.query("select * from eventos order by comeca_em"),
     pool.query("select * from relatorios order by criado_em desc"),
     pool.query("select * from relatorio_contas"),
     pool.query("select * from atualizacoes_manuais order by registrada_em"),
@@ -205,6 +209,7 @@ export async function carregarDoBanco(
       paraPublicacao(linha, contasPorPublicacao.get(String(linha.id)) ?? []),
     ),
     boosts: impulsionamentos.rows.map(paraImpulsionamento),
+    eventos: eventos.rows.map(paraEvento),
     inbox: interacoes.rows.map((linha) =>
       paraInteracao(linha, respostasPorInteracao.get(String(linha.id)) ?? []),
     ),
@@ -319,6 +324,7 @@ export async function gravarNoBanco(
     );
 
     await inserirEmLote(cliente, "interacoes", COLUNAS.interacoes, estado.inbox.map(deInteracao));
+    await inserirEmLote(cliente, "eventos", COLUNAS.eventos, estado.eventos.map(deEvento));
     await inserirEmLote(
       cliente,
       "respostas",
@@ -419,6 +425,24 @@ const COLUNAS = {
     "situacao",
     "publico_alvo",
     "resultados",
+  ],
+  eventos: [
+    "id",
+    "projeto_id",
+    "titulo",
+    "descricao",
+    "tipo",
+    "comeca_em",
+    "termina_em",
+    "dia_inteiro",
+    "local",
+    "municipio_codigo",
+    "responsavel",
+    "origem",
+    "uid_externo",
+    "criado_por",
+    "criado_em",
+    "dados_extras",
   ],
   interacoes: [
     "id",

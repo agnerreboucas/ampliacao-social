@@ -41,6 +41,12 @@ export type AcaoHistorico =
   | "publicacao_criada"
   | "publicacao_alterada"
   | "publicacao_republicada"
+  | "publicacao_movida"
+  // Agenda
+  | "evento_criado"
+  | "evento_editado"
+  | "evento_removido"
+  | "agenda_importada"
   // Mídia paga
   | "impulsionamento_criado"
   | "impulsionamento_encerrado"
@@ -94,6 +100,19 @@ export const ACOES: Record<
 
   publicacao_criada: { verbo: "criou uma publicação", area: "Publicações", peso: "normal" },
   publicacao_alterada: { verbo: "alterou uma publicação", area: "Publicações", peso: "normal" },
+  publicacao_movida: {
+    verbo: "moveu uma publicação de fase",
+    area: "Publicações",
+    peso: "normal",
+  },
+
+  evento_criado: { verbo: "criou um compromisso", area: "Agenda", peso: "normal" },
+  evento_editado: { verbo: "alterou um compromisso", area: "Agenda", peso: "normal" },
+  evento_removido: { verbo: "removeu um compromisso", area: "Agenda", peso: "atencao" },
+  // Importar agenda mexe em vários compromissos de uma vez: quem for prestar
+  // contas de uma mudança de horário precisa achar a importação que a causou.
+  agenda_importada: { verbo: "importou uma agenda", area: "Agenda", peso: "atencao" },
+
   publicacao_republicada: {
     verbo: "republicou uma publicação",
     area: "Publicações",

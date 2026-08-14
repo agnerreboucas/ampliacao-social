@@ -23,6 +23,8 @@ import {
   lerDescoberta,
 } from "@/lib/social/credenciais.server";
 import { NETWORKS, hasBlockingIssues, statusLabel, validateDraft } from "@/lib/social/networks";
+import { can } from "@/lib/social/permissions";
+import { FASE_LABELS } from "@/lib/social/format";
 import { aplicarModelo, separarEnviaveis } from "@/lib/social/relacionamento";
 import {
   VALORES_ZERADOS,
@@ -82,6 +84,8 @@ import {
 } from "@/lib/social/publico";
 import { medirCobertura, montarMapa } from "@/lib/social/mapa";
 import { conversasPorPeca, indexarOrigens, resumirPeca } from "@/lib/social/rastreio";
+import { chaveDoDia, podeMoverPara, resumirDia } from "@/lib/social/agenda";
+import { lerIcs, planejarImportacao } from "@/lib/social/ics";
 import { acharMunicipio } from "@/lib/social/municipios-sp";
 import { gerarRelatorioPdf } from "@/lib/social/pdf/relatorio";
 import { paraBase64 } from "@/lib/social/pdf/documento";
@@ -117,6 +121,7 @@ import type {
   AtualizacaoManual,
   AudienceInsight,
   Boost,
+  Evento,
   InboxItem,
   NetworkId,
   PeriodKey,
@@ -3109,4 +3114,273 @@ export const detalharMunicipio = createServerFn({ method: "POST" })
           ? ponto.alcance / ponto.municipio.populacao
           : null,
     };
+  });
+
+// ---------------------------------------------------------------------------
+// Agenda: eventos, produção e publicação
+// ---------------------------------------------------------------------------
+
+/**
+ * Tudo o que a agenda mostra, para o projeto e o período pedidos.
+ *
+ * Devolve peças e eventos crus, e não já agrupados por dia. O agrupamento é
+ * puro e roda no navegador — assim trocar de mês, de semana ou de visão não
+ * custa uma ida ao servidor, que é o que faria o calendário parecer pesado.
+ */
+export const listarAgenda = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const { projetos } = await exigirProjetos(data.projectId);
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const idsDeConta = new Set(contas.map((conta) => conta.id));
+
+    return {
+      eventos: db.eventos
+        .filter((evento) => projetos.includes(evento.projectId))
+        .sort((a, b) => a.comecaEm.localeCompare(b.comecaEm)),
+      posts: db.posts
+        .filter((post) => post.accountIds.some((id) => idsDeConta.has(id)))
+        .sort(sortPostsByRecency),
+      contas,
+      users: db.users,
+    };
+  });
+
+const eventoSchema = z.object({
+  projectId: z.string(),
+  titulo: z.string().min(1).max(200),
+  descricao: z.string().max(2000).nullable(),
+  tipo: z.enum(["agenda", "gravacao", "prazo", "interno"]),
+  comecaEm: z.string(),
+  terminaEm: z.string().nullable(),
+  diaInteiro: z.boolean(),
+  local: z.string().max(200).nullable(),
+  responsavel: z.string().nullable(),
+});
+
+/**
+ * Cria ou atualiza um compromisso.
+ *
+ * O município não é informado por quem digita: sai do texto do local, pelo
+ * mesmo casamento de nomes que o mapa usa. Pedir o código do IBGE a quem está
+ * marcando uma caminhada seria transferir para a pessoa um trabalho que a
+ * plataforma já sabe fazer — e ela erraria mais.
+ */
+export const salvarEvento = createServerFn({ method: "POST" })
+  .inputValidator(eventoSchema.extend({ id: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const { usuario, projetos } = await exigirProjetos(data.projectId);
+    if (!projetos.includes(data.projectId)) throw new Error("Projeto não encontrado.");
+
+    const db = getDb();
+    const municipio = data.local ? acharMunicipio(data.local) : null;
+    const existente = data.id ? db.eventos.find((evento) => evento.id === data.id) : undefined;
+
+    if (existente) {
+      Object.assign(existente, {
+        titulo: data.titulo,
+        descricao: data.descricao,
+        tipo: data.tipo,
+        comecaEm: data.comecaEm,
+        terminaEm: data.terminaEm,
+        diaInteiro: data.diaInteiro,
+        local: data.local,
+        municipioCodigo: municipio?.codigo ?? null,
+        responsavel: data.responsavel,
+      });
+      anotarDe(usuario, { acao: "evento_editado", alvoRotulo: data.titulo });
+      await persistir();
+      return { evento: existente };
+    }
+
+    const evento: Evento = {
+      id: nextId("evento"),
+      projectId: data.projectId,
+      titulo: data.titulo,
+      descricao: data.descricao,
+      tipo: data.tipo,
+      comecaEm: data.comecaEm,
+      terminaEm: data.terminaEm,
+      diaInteiro: data.diaInteiro,
+      local: data.local,
+      municipioCodigo: municipio?.codigo ?? null,
+      responsavel: data.responsavel,
+      postIds: [],
+      origem: "manual",
+      criadoPor: usuario.id,
+      criadoEm: new Date().toISOString(),
+    };
+
+    db.eventos.push(evento);
+    anotarDe(usuario, { acao: "evento_criado", alvoRotulo: data.titulo });
+    await persistir();
+    return { evento };
+  });
+
+export const removerEvento = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const evento = db.eventos.find((candidato) => candidato.id === data.id);
+    if (!evento) throw new Error("Evento não encontrado.");
+    const { usuario } = await exigirProjetos(evento.projectId);
+
+    db.eventos = db.eventos.filter((candidato) => candidato.id !== data.id);
+    anotarDe(usuario, { acao: "evento_removido", alvoRotulo: evento.titulo });
+    await persistir();
+    return { ok: true as const };
+  });
+
+/** Liga (ou desliga) uma peça de conteúdo a um compromisso. */
+export const vincularPeca = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ eventoId: z.string(), postId: z.string(), vincular: z.boolean() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const evento = db.eventos.find((candidato) => candidato.id === data.eventoId);
+    if (!evento) throw new Error("Evento não encontrado.");
+    const { usuario } = await exigirProjetos(evento.projectId);
+
+    evento.postIds = data.vincular
+      ? [...new Set([...evento.postIds, data.postId])]
+      : evento.postIds.filter((id) => id !== data.postId);
+
+    anotarDe(usuario, { acao: "evento_editado", alvoRotulo: evento.titulo });
+    await persistir();
+    return { evento };
+  });
+
+/**
+ * Move uma peça de fase no quadro.
+ *
+ * A transição é validada no servidor, e não só na tela: arrastar é um gesto
+ * fácil de fazer sem querer, e "publicado" é um estado de que não se volta.
+ */
+export const moverPecaDeFase = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      postId: z.string(),
+      fase: z.enum([
+        "ideia",
+        "rascunho",
+        "aguardando_aprovacao",
+        "aprovado",
+        "agendado",
+        "publicado",
+      ]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const post = db.posts.find((candidato) => candidato.id === data.postId);
+    if (!post) throw new Error("Publicação não encontrada.");
+    const usuario = await exigirContas(post.accountIds);
+
+    if (!podeMoverPara(post.status, data.fase)) {
+      return {
+        ok: false as const,
+        erro: `Uma peça em "${FASE_LABELS[post.status]}" não vai direto para "${FASE_LABELS[data.fase]}".`,
+      };
+    }
+
+    // Publicar pelo quadro exige a mesma permissão que publicar pela tela de
+    // publicação. Um atalho que ignora a regra é a regra deixando de existir.
+    if (data.fase === "publicado" && !can(usuario.role, "publicar_direto")) {
+      return {
+        ok: false as const,
+        erro: "Seu papel não publica direto. Mova para aprovação e peça a alguém que aprove.",
+      };
+    }
+
+    post.status = data.fase;
+    if (data.fase === "publicado") post.publishedAt = new Date().toISOString();
+    if (data.fase === "aprovado") post.approvedBy = usuario.id;
+
+    anotarDe(usuario, { acao: "publicacao_movida", alvoRotulo: FASE_LABELS[data.fase] });
+    await persistir();
+    return { ok: true as const, post };
+  });
+
+/**
+ * Lê um arquivo `.ics` e diz o que aconteceria — sem gravar nada.
+ *
+ * Importar agenda por cima de agenda é o tipo de operação que ninguém quer
+ * descobrir depois. Por isso são duas chamadas: esta mostra o plano, e
+ * `aplicarAgendaIcs` executa o mesmo plano depois que a pessoa olhou.
+ */
+export const lerAgendaIcs = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string(), conteudo: z.string().max(4_000_000) }))
+  .handler(async ({ data }) => {
+    const { usuario } = await exigirProjetos(data.projectId);
+    const db = getDb();
+
+    const plano = planejarImportacao(
+      lerIcs(data.conteudo),
+      db.eventos.filter((evento) => evento.projectId === data.projectId),
+      { projectId: data.projectId, criadoPor: usuario.id },
+    );
+
+    return {
+      novos: plano.novos,
+      atualizados: plano.atualizados.map(({ evento, mudou }) => ({
+        id: evento.id,
+        titulo: evento.titulo,
+        mudou,
+      })),
+      iguais: plano.iguais,
+      ignorados: plano.ignorados,
+      comRepeticao: plano.comRepeticao,
+    };
+  });
+
+export const aplicarAgendaIcs = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string(), conteudo: z.string().max(4_000_000) }))
+  .handler(async ({ data }) => {
+    const { usuario } = await exigirProjetos(data.projectId);
+    const db = getDb();
+
+    const plano = planejarImportacao(
+      lerIcs(data.conteudo),
+      db.eventos.filter((evento) => evento.projectId === data.projectId),
+      { projectId: data.projectId, criadoPor: usuario.id },
+    );
+
+    db.eventos.push(...plano.novos);
+    for (const { evento } of plano.atualizados) {
+      const indice = db.eventos.findIndex((candidato) => candidato.id === evento.id);
+      if (indice >= 0) db.eventos[indice] = evento;
+    }
+
+    anotarDe(usuario, {
+      acao: "agenda_importada",
+      alvoRotulo: `${plano.novos.length} novos, ${plano.atualizados.length} atualizados`,
+    });
+    await persistir();
+
+    return {
+      criados: plano.novos.length,
+      atualizados: plano.atualizados.length,
+      iguais: plano.iguais,
+      ignorados: plano.ignorados.length,
+    };
+  });
+
+/** O dia de hoje, para a tela que abre com ele. */
+export const resumoDeHoje = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string().optional(), dia: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const { projetos } = await exigirProjetos(data.projectId);
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const idsDeConta = new Set(contas.map((conta) => conta.id));
+
+    const dia = data.dia ?? chaveDoDia(new Date());
+    const resumo = resumirDia(
+      dia,
+      db.eventos.filter((evento) => projetos.includes(evento.projectId)),
+      db.posts.filter((post) => post.accountIds.some((id) => idsDeConta.has(id))),
+      db.inbox.filter((item) => idsDeConta.has(item.accountId)),
+    );
+
+    return { resumo, contas, users: db.users };
   });

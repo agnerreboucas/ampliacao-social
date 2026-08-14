@@ -1,0 +1,299 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  chaveDoDia,
+  gradeDoMes,
+  horaDoItem,
+  itensDoDia,
+  montarQuadro,
+  podeMoverPara,
+  resumirDia,
+  semanaDe,
+  tituloDoDia,
+} from "./agenda.ts";
+import type { Evento, InboxItem, Post, PostStatus } from "./types.ts";
+
+function evento(parcial: Partial<Evento> = {}): Evento {
+  return {
+    id: `ev-${Math.random().toString(36).slice(2, 8)}`,
+    projectId: "proj-1",
+    titulo: "Caminhada na feira",
+    descricao: null,
+    tipo: "agenda",
+    comecaEm: "2026-08-15T09:00:00",
+    terminaEm: null,
+    diaInteiro: false,
+    local: "Feira da Vila Nova",
+    municipioCodigo: null,
+    responsavel: null,
+    postIds: [],
+    origem: "manual",
+    criadoPor: "user-1",
+    criadoEm: "2026-08-01T10:00:00",
+    ...parcial,
+  };
+}
+
+function post(parcial: Partial<Post> = {}): Post {
+  return {
+    id: `post-${Math.random().toString(36).slice(2, 8)}`,
+    projectId: "proj-1",
+    accountIds: ["acc-1"],
+    format: "imagem",
+    caption: "legenda",
+    media: { count: 1, aspectRatio: "4:5", fileSizeMb: 2 },
+    status: "rascunho",
+    scheduledFor: null,
+    publishedAt: null,
+    createdBy: "user-1",
+    approvedBy: null,
+    requiresApproval: true,
+    metrics: null,
+    coverGradient: "",
+    ...parcial,
+  };
+}
+
+function interacao(status: InboxItem["status"]): InboxItem {
+  return {
+    id: `i-${Math.random().toString(36).slice(2, 8)}`,
+    accountId: "acc-1",
+    kind: "comentario",
+    authorHandle: "@alguem",
+    authorName: "Alguém",
+    avatarGradient: "",
+    text: "oi",
+    postId: null,
+    receivedAt: "2026-08-15T10:00:00",
+    status,
+    assignedTo: null,
+    replies: [],
+    relacao: "seguidor",
+    interacoes: 1,
+  };
+}
+
+// --- Dia --------------------------------------------------------------------
+
+test("a chave do dia é local, não UTC", () => {
+  // Um evento às 21h de 15 de agosto pertence ao dia 15 para quem está no
+  // Brasil, mesmo que em UTC já seja dia 16.
+  assert.equal(chaveDoDia(new Date(2026, 7, 15, 21, 0)), "2026-08-15");
+  assert.equal(chaveDoDia(new Date(2026, 7, 5, 0, 30)), "2026-08-05");
+});
+
+test("o título do dia sai por extenso", () => {
+  // 15 de agosto de 2026 é um sábado.
+  assert.equal(tituloDoDia("2026-08-15"), "sábado, 15 de agosto");
+});
+
+// --- Distribuição -----------------------------------------------------------
+
+test("o evento cai no dia em que começa", () => {
+  const itens = itensDoDia("2026-08-15", [evento()], []);
+  assert.equal(itens.length, 1);
+  assert.equal(itens[0].papel, "evento");
+});
+
+test("evento de vários dias aparece em cada um deles", () => {
+  // Uma caravana de três dias precisa aparecer na quarta de quem olha a quarta.
+  const caravana = evento({
+    comecaEm: "2026-08-10T08:00:00",
+    terminaEm: "2026-08-12T18:00:00",
+  });
+
+  for (const dia of ["2026-08-10", "2026-08-11", "2026-08-12"]) {
+    assert.equal(itensDoDia(dia, [caravana], []).length, 1, `faltou no dia ${dia}`);
+  }
+  assert.equal(itensDoDia("2026-08-13", [caravana], []).length, 0);
+});
+
+test("a peça publicada entra pelo dia da publicação", () => {
+  const peca = post({ status: "publicado", publishedAt: "2026-08-15T19:00:00" });
+  const itens = itensDoDia("2026-08-15", [], [peca]);
+
+  assert.equal(itens[0].papel, "publicado");
+});
+
+test("a peça agendada entra pelo dia marcado", () => {
+  const peca = post({ status: "agendado", scheduledFor: "2026-08-16T12:00:00" });
+  assert.equal(itensDoDia("2026-08-16", [], [peca])[0].papel, "agendado");
+});
+
+test("peça em produção sem data não entra em dia nenhum", () => {
+  // Ela mora no quadro. Empurrá-la para hoje encheria o dia de hoje com
+  // trabalho que não vence hoje.
+  const peca = post({ status: "rascunho", scheduledFor: null });
+  assert.equal(itensDoDia(chaveDoDia(new Date()), [], [peca]).length, 0);
+});
+
+test("o dia sai em ordem de hora", () => {
+  const itens = itensDoDia(
+    "2026-08-15",
+    [evento({ comecaEm: "2026-08-15T14:00:00" })],
+    [
+      post({ status: "publicado", publishedAt: "2026-08-15T09:00:00" }),
+      post({ status: "agendado", scheduledFor: "2026-08-15T20:00:00" }),
+    ],
+  );
+
+  assert.deepEqual(itens.map(horaDoItem), ["09:00", "14:00", "20:00"]);
+});
+
+test("evento de dia inteiro não tem hora", () => {
+  const itens = itensDoDia("2026-08-15", [evento({ diaInteiro: true })], []);
+  assert.equal(horaDoItem(itens[0]), null);
+});
+
+// --- Quadro -----------------------------------------------------------------
+
+test("o quadro tem todas as fases, inclusive as vazias", () => {
+  // Coluna vazia é informação: é quando ninguém está produzindo nada.
+  const quadro = montarQuadro([post({ status: "ideia" })]);
+
+  assert.equal(quadro.length, 6);
+  assert.deepEqual(
+    quadro.map((coluna) => coluna.fase),
+    ["ideia", "rascunho", "aguardando_aprovacao", "aprovado", "agendado", "publicado"],
+  );
+  assert.equal(quadro[0].posts.length, 1);
+  assert.equal(quadro[1].posts.length, 0);
+});
+
+test("dentro da coluna, o que tem prazo mais perto vem antes", () => {
+  const quadro = montarQuadro([
+    post({ status: "rascunho", scheduledFor: "2026-08-20T10:00:00" }),
+    post({ status: "rascunho", scheduledFor: "2026-08-16T10:00:00" }),
+    post({ status: "rascunho", scheduledFor: null }),
+  ]);
+
+  const datas = quadro[1].posts.map((p) => p.scheduledFor);
+  assert.deepEqual(datas, ["2026-08-16T10:00:00", "2026-08-20T10:00:00", null]);
+});
+
+test("a peça que falhou não aparece em coluna nenhuma", () => {
+  // "Falhou" não é etapa do caminho, é acidente no fim dele: vira marcador na
+  // peça, e não uma sétima coluna que ninguém sabe o que fazer com.
+  const quadro = montarQuadro([post({ status: "falhou" }), post({ status: "ideia" })]);
+
+  assert.equal(quadro.length, 6);
+  assert.equal(
+    quadro.reduce((total, coluna) => total + coluna.posts.length, 0),
+    1,
+  );
+});
+
+// --- Movimentos -------------------------------------------------------------
+
+test("a peça anda pelas fases vizinhas", () => {
+  assert.equal(podeMoverPara("ideia", "rascunho"), true);
+  assert.equal(podeMoverPara("rascunho", "aguardando_aprovacao"), true);
+  assert.equal(podeMoverPara("aguardando_aprovacao", "aprovado"), true);
+  assert.equal(podeMoverPara("aprovado", "agendado"), true);
+});
+
+test("dá para voltar atrás enquanto não publicou", () => {
+  assert.equal(podeMoverPara("aguardando_aprovacao", "rascunho"), true);
+  assert.equal(podeMoverPara("agendado", "aprovado"), true);
+});
+
+test("publicado é fim de linha", () => {
+  // Despublicar não é operação que a rede ofereça de volta; oferecer o botão
+  // produziria um estado que a plataforma não consegue sustentar.
+  for (const fase of ["ideia", "rascunho", "aprovado", "agendado"] as PostStatus[]) {
+    assert.equal(podeMoverPara("publicado", fase), false);
+  }
+});
+
+test("não dá para pular da ideia direto para publicado", () => {
+  assert.equal(podeMoverPara("ideia", "publicado"), false);
+  assert.equal(podeMoverPara("ideia", "aprovado"), false);
+});
+
+// --- Resumo do dia ----------------------------------------------------------
+
+test("o resumo separa o que acontece, o que sai e o que trava", () => {
+  const resumo = resumirDia(
+    "2026-08-15",
+    [evento()],
+    [
+      post({ status: "agendado", scheduledFor: "2026-08-15T18:00:00" }),
+      post({ status: "publicado", publishedAt: "2026-08-15T08:00:00" }),
+      post({ status: "aguardando_aprovacao" }),
+      post({ status: "rascunho", scheduledFor: "2026-08-15T23:59:00" }),
+    ],
+    [interacao("pendente"), interacao("respondido")],
+  );
+
+  assert.equal(resumo.eventos.length, 1);
+  assert.equal(resumo.publicaHoje.length, 1);
+  assert.equal(resumo.publicadas.length, 1);
+  assert.equal(resumo.esperandoAprovacao.length, 1);
+  assert.equal(resumo.produzindo.length, 1);
+  assert.equal(resumo.conversasPendentes, 1);
+  assert.equal(resumo.vazio, false);
+});
+
+test("prazo vencido continua na produção de hoje", () => {
+  // A peça esquecida ficaria esquecida se sumisse da lista no dia seguinte.
+  const resumo = resumirDia(
+    "2026-08-15",
+    [],
+    [post({ status: "rascunho", scheduledFor: "2026-08-10T10:00:00" })],
+  );
+
+  assert.equal(resumo.produzindo.length, 1);
+});
+
+test("prazo futuro não entra no dia de hoje", () => {
+  const resumo = resumirDia(
+    "2026-08-15",
+    [],
+    [post({ status: "rascunho", scheduledFor: "2026-08-20T10:00:00" })],
+  );
+
+  assert.equal(resumo.produzindo.length, 0);
+});
+
+test("dia sem nada se declara vazio", () => {
+  const resumo = resumirDia("2026-08-15", [], []);
+  assert.equal(resumo.vazio, true);
+});
+
+test("o dia do meio de um evento longo continua sendo dia de evento", () => {
+  const resumo = resumirDia(
+    "2026-08-11",
+    [evento({ comecaEm: "2026-08-10T08:00:00", terminaEm: "2026-08-12T18:00:00" })],
+    [],
+  );
+
+  assert.equal(resumo.eventos.length, 1);
+});
+
+// --- Grades -----------------------------------------------------------------
+
+test("a grade do mês fecha semanas inteiras", () => {
+  const grade = gradeDoMes(2026, 7); // agosto de 2026
+  assert.equal(grade.length % 7, 0);
+  assert.ok(grade.length === 35 || grade.length === 42, String(grade.length));
+});
+
+test("a grade começa num domingo e termina num sábado", () => {
+  const grade = gradeDoMes(2026, 7);
+  assert.equal(new Date(`${grade[0]}T12:00:00`).getDay(), 0);
+  assert.equal(new Date(`${grade[grade.length - 1]}T12:00:00`).getDay(), 6);
+});
+
+test("a grade contém todos os dias do mês pedido", () => {
+  const grade = gradeDoMes(2026, 7);
+  assert.ok(grade.includes("2026-08-01"));
+  assert.ok(grade.includes("2026-08-31"));
+});
+
+test("a semana vai de domingo a sábado", () => {
+  const semana = semanaDe("2026-08-15"); // um sábado
+  assert.equal(semana.length, 7);
+  assert.equal(semana[0], "2026-08-09");
+  assert.equal(semana[6], "2026-08-15");
+});

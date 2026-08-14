@@ -10,6 +10,7 @@ import type {
   Boost,
   CelulaDemografica,
   DailyMetric,
+  Evento,
   InboxItem,
   PlatformUser,
   Post,
@@ -39,6 +40,8 @@ export type SocialDatabase = {
   posts: Post[];
   boosts: Boost[];
   inbox: InboxItem[];
+  /** Compromissos da campanha no calendário. */
+  eventos: Evento[];
   reports: Report[];
   /** Registros de atualização manual, incluindo os vários do mesmo dia. */
   atualizacoes: AtualizacaoManual[];
@@ -446,6 +449,60 @@ const LEGENDAS_DE_STORY = [
   "Últimas horas da oferta do café ☕ passa aqui",
   "Bastidor da padaria às 5h da manhã",
 ];
+
+/**
+ * A agenda semeada.
+ *
+ * Cobre os três casos que a tela precisa saber desenhar: o compromisso que já
+ * passou e gerou peça, o de hoje que ainda vai gerar, e o futuro que existe só
+ * como data. Sem o terceiro, ninguém enxerga que o calendário serve para
+ * planejar e não só para registrar.
+ */
+function buildEventos(posts: Post[], today: Date): Evento[] {
+  const publicadas = posts.filter((post) => post.status === "publicado").map((post) => post.id);
+
+  const base = (
+    id: string,
+    titulo: string,
+    tipo: Evento["tipo"],
+    dias: number,
+    hora: number,
+    local: string | null,
+    postIds: string[] = [],
+  ): Evento => ({
+    id,
+    projectId: "proj-mercadinho",
+    titulo,
+    descricao: null,
+    tipo,
+    comecaEm: atHour(addDays(today, dias), hora),
+    terminaEm: null,
+    diaInteiro: false,
+    local,
+    municipioCodigo: null,
+    responsavel: null,
+    postIds,
+    origem: "manual",
+    criadoPor: "user-ana",
+    criadoEm: addDays(today, -30).toISOString(),
+  });
+
+  return [
+    base(
+      "ev-1",
+      "Feira da semana na loja do centro",
+      "agenda",
+      -4,
+      8,
+      "Loja do Centro",
+      publicadas.slice(0, 2),
+    ),
+    base("ev-2", "Gravação do vídeo da padaria", "gravacao", -1, 14, "Padaria"),
+    base("ev-3", "Reunião de pauta da semana", "interno", 0, 10, null),
+    base("ev-4", "Prazo do material do feriado", "prazo", 2, 18, null),
+    base("ev-5", "Ação de degustação no hortifrúti", "agenda", 5, 9, "Setor de hortifrúti"),
+  ];
+}
 
 function buildPosts(accounts: AccountSeed[], today: Date): Post[] {
   const rand = mulberry32(hashSeed("posts"));
@@ -929,6 +986,7 @@ function createDatabase(): SocialDatabase {
     posts,
     boosts: buildBoosts(posts, today),
     inbox: buildInbox(now),
+    eventos: buildEventos(posts, today),
     reports: buildReports(today),
     atualizacoes: [],
     incomingQueue: INCOMING_SEED.map((item, index) => ({
@@ -1007,6 +1065,7 @@ function criarOuRestaurar(): SocialDatabase {
     posts: salvo.posts,
     boosts: salvo.boosts,
     inbox: salvo.inbox,
+    eventos: salvo.eventos,
     reports: salvo.reports,
     atualizacoes: salvo.atualizacoes,
   };
@@ -1031,6 +1090,7 @@ export function substituirEstado(estado: EstadoPersistivel | null): void {
     posts: estado.posts,
     boosts: estado.boosts,
     inbox: estado.inbox,
+    eventos: [],
     reports: estado.reports,
     atualizacoes: estado.atualizacoes,
   };
