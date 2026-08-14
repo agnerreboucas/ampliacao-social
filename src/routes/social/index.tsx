@@ -19,8 +19,9 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { detalharPeriodo, obterPainel } from "@/lib/api/social.functions";
+import { detalharPeriodo, obterPainel, obterPainelGeral } from "@/lib/api/social.functions";
 import { CartaoDeRede } from "@/components/social/cartao-rede";
+import { Recomendacoes, TabelaDeCanais } from "@/components/social/resumo-dos-canais";
 import { GrowthChart, ReachChart, SplitDonut } from "@/components/social/charts";
 import {
   AccountAvatar,
@@ -58,6 +59,15 @@ function PainelPage() {
   const painel = useQuery({
     queryKey: ["social", "painel", projectId, period],
     queryFn: () => obterPainel({ data: { projectId: projectId ?? undefined, period } }),
+    enabled: Boolean(projectId),
+  });
+
+  // A leitura canal a canal e as observações vinham de uma segunda tela, que
+  // repetia todo o resto desta. Consulta separada porque é um cálculo à parte —
+  // e porque o resto do painel não deve esperar por ela para aparecer.
+  const resumo = useQuery({
+    queryKey: ["social", "painel-geral", projectId, period],
+    queryFn: () => obterPainelGeral({ data: { projectId: projectId ?? undefined, period } }),
     enabled: Boolean(projectId),
   });
 
@@ -120,6 +130,8 @@ function PainelPage() {
             />
           </div>
 
+          {resumo.data ? <Recomendacoes lista={resumo.data.recomendacoes} /> : null}
+
           <SectionCard
             title="Suas redes"
             description="Cada rede com o próprio quadro. Clique em uma para abrir o detalhe dela."
@@ -131,6 +143,16 @@ function PainelPage() {
               ))}
             </div>
           </SectionCard>
+
+          {resumo.data ? (
+            <SectionCard
+              title="Canal a canal"
+              description="Ordenado por alcance. A participação mostra quanto cada canal representa do total."
+              icon={Radar}
+            >
+              <TabelaDeCanais canais={resumo.data.canais} />
+            </SectionCard>
+          ) : null}
 
           <div className="grid items-start gap-4 lg:grid-cols-3">
             <SectionCard

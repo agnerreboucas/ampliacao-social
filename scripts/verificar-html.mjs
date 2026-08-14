@@ -51,6 +51,14 @@ if ((await campoEmail.count()) === 0) {
   await pagina.waitForTimeout(3000);
 
   const painel = await pagina.locator("body").innerText();
+  // Painel e Visão geral eram duas entradas para a mesma tela; sobrou uma, e
+  // ela precisa trazer o que a outra tinha de próprio.
+  if (/CANAL A CANAL/i.test(painel) && /O QUE OS NÚMEROS SUGEREM/i.test(painel)) {
+    console.log("✓ o painel absorveu a leitura canal a canal e as observações");
+  } else {
+    erros.push("o painel não traz canal a canal e as observações");
+  }
+
   if (/Painel/i.test(painel) && /SEGUIDORES/i.test(painel)) {
     console.log("✓ entrou e o painel carregou");
   } else {
@@ -62,7 +70,7 @@ if ((await campoEmail.count()) === 0) {
   if (/SUAS REDES/i.test(painel)) console.log("✓ o painel traz os cartões por rede");
   else erros.push("os cartões por rede não apareceram no painel");
 
-  for (const rede of ["Instagram", "Facebook", "TikTok", "YouTube"]) {
+  for (const rede of ["Instagram", "Facebook", "TikTok", "YouTube", "LinkedIn"]) {
     if (painel.includes(rede)) console.log(`✓ cartão de ${rede}`);
     else erros.push(`faltou o cartão de ${rede}`);
   }
@@ -85,7 +93,6 @@ if ((await campoEmail.count()) === 0) {
   // --- Percorrer as demais telas --------------------------------------------
 
   const telas = [
-    ["Visão geral", /CANAL A CANAL/i],
     ["Contas", /conta|perfil/i],
     ["Importar histórico", /Traga a planilha|Escolha a conta/i],
     ["Conteúdo", /Peça a peça|Por formato/i],

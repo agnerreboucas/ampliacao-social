@@ -16,7 +16,6 @@ import {
   MapPin,
   MessagesSquare,
   PencilLine,
-  Radar,
   Rocket,
   Send,
   Sparkles,
@@ -96,7 +95,6 @@ function SocialShell() {
   const role = session.user.role;
   const items: NavItem[] = [
     { to: "/social", label: "Painel", icon: LayoutDashboard, ability: "metricas" },
-    { to: "/social/geral", label: "Visão geral", icon: Radar, ability: "metricas" },
     { to: "/social/contas", label: "Contas", icon: Link2, ability: "metricas" },
     { to: "/social/atualizar", label: "Atualizar números", icon: PencilLine, ability: "metricas" },
     { to: "/social/importar", label: "Importar histórico", icon: Upload, ability: "metricas" },

@@ -727,10 +727,20 @@ function resumirRedes(contas: SocialAccount[], period: PeriodKey) {
 
   return [...porRede.entries()]
     .map(([networkId, contasDaRede]) => {
-      const juntas = mergeSeries(
-        contasDaRede.map((conta) => slicePeriod(db.metrics.get(conta.id) ?? [], period)),
+      /**
+       * A série inteira vai para o `summarize`, e não a já recortada.
+       *
+       * `summarize` compara o período pedido com o período anterior de mesmo
+       * tamanho — e para isso precisa ter o anterior em mãos. Recortar antes
+       * deixava o "anterior" vazio, e a variação do alcance saía zero em todos
+       * os cartões, aparecendo na tela como um traço. Um traço em todo cartão
+       * lê como "a plataforma não sabe", quando o dado sempre esteve ali.
+       */
+      const serieCompleta = mergeSeries(
+        contasDaRede.map((conta) => db.metrics.get(conta.id) ?? []),
       );
-      const resumo = summarize(juntas, "tudo");
+      const resumo = summarize(serieCompleta, period);
+      const juntas = slicePeriod(serieCompleta, period);
       const split = splitOrganicPaid(juntas);
 
       return {

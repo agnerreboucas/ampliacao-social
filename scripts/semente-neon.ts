@@ -186,6 +186,16 @@ const SEMENTES_DE_CONTA: SementeDeConta[] = [
     contaDeAnuncios: false,
     mensageriaAprovada: false,
   },
+  {
+    id: "acc-li-neon",
+    networkId: "linkedin",
+    handle: "/in/neoncunha",
+    seguidoresBase: 3900,
+    crescimentoDiario: 9,
+    fatiaPaga: 0,
+    contaDeAnuncios: false,
+    mensageriaAprovada: true,
+  },
 ];
 
 const contas: SocialAccount[] = SEMENTES_DE_CONTA.map((semente, indice) => ({
@@ -334,7 +344,10 @@ function perfilDaConta(semente: SementeDeConta, serie: DailyMetric[]): AudienceI
     activityByHour: Array.from({ length: 24 }, (_, hora) => {
       const almoco = Math.exp(-((hora - 12.5) ** 2) / 4);
       const noite = Math.exp(-((hora - 20) ** 2) / 5);
-      return { hour: hora, activity: Math.round((almoco * 0.7 + noite) * 100 * (0.85 + rand() * 0.3)) };
+      return {
+        hour: hora,
+        activity: Math.round((almoco * 0.7 + noite) * 100 * (0.85 + rand() * 0.3)),
+      };
     }),
     topCities: ["São Paulo", "Guarulhos", "Osasco", "Santo André", "São Bernardo do Campo"].map(
       (city, indice) => ({ city, share: fatiasDeCidade[indice] }),
@@ -459,12 +472,29 @@ const PAUTA: SementeDePeca[] = [
   },
   {
     formato: "carrossel",
-    legenda:
-      "Cinco compromissos que assumimos por escrito. Cobrem a gente. #proposta #compromisso",
+    legenda: "Cinco compromissos que assumimos por escrito. Cobrem a gente. #proposta #compromisso",
     hora: 13,
     atras: 21,
-    redes: ["acc-ig-neon", "acc-fb-neon"],
+    redes: ["acc-ig-neon", "acc-fb-neon", "acc-li-neon"],
     peso: 1.5,
+  },
+  {
+    formato: "imagem",
+    legenda:
+      "O plano de desenvolvimento econômico da região, em números: onde estão os empregos, onde eles faltam e o que muda com formação técnica. #proposta #resultado",
+    hora: 10,
+    atras: 7,
+    redes: ["acc-li-neon"],
+    peso: 1.2,
+  },
+  {
+    formato: "video",
+    legenda:
+      "Painel sobre primeira infância e retorno econômico da creche pública. A conta fecha — e ainda sobra. #educacao #proposta",
+    hora: 12,
+    atras: 16,
+    redes: ["acc-li-neon", "acc-yt-neon"],
+    peso: 0.9,
   },
 ];
 
@@ -760,7 +790,8 @@ const INTERACOES: SementeDeInteracao[] = [
     minutosAtras: 520,
     relacao: "apoiador",
     interacoes: 14,
-    respondida: "Oi, Márcia! Vai ser na quarta às 19h, no salão da associação da Vila Curuçá. Te espero lá!",
+    respondida:
+      "Oi, Márcia! Vai ser na quarta às 19h, no salão da associação da Vila Curuçá. Te espero lá!",
   },
   {
     texto: "Assisti a live inteira. Muito claro o ponto sobre a fila da creche.",
@@ -781,6 +812,27 @@ const INTERACOES: SementeDeInteracao[] = [
     autor: 6,
     minutosAtras: 900,
     relacao: "defensor",
+    interacoes: 11,
+  },
+  {
+    texto:
+      "Trabalho com formação técnica há 12 anos e gostaria de contribuir com a parte de empregos do plano.",
+    peca: "post-13",
+    tipo: "mensagem",
+    conta: "acc-li-neon",
+    autor: 5,
+    minutosAtras: 260,
+    relacao: "seguidor",
+    interacoes: 4,
+  },
+  {
+    texto: "Ótimo painel. Vocês têm o estudo que embasa o número de retorno da creche?",
+    peca: "post-14",
+    tipo: "comentario",
+    conta: "acc-li-neon",
+    autor: 6,
+    minutosAtras: 480,
+    relacao: "apoiador",
     interacoes: 11,
   },
 ];
@@ -808,9 +860,7 @@ function montarInteracoes(): InboxItem[] {
               id: `reply-${indice + 1}`,
               author: "Atendimento",
               text: semente.respondida,
-              sentAt: new Date(
-                Date.now() - (semente.minutosAtras - 25) * 60_000,
-              ).toISOString(),
+              sentAt: new Date(Date.now() - (semente.minutosAtras - 25) * 60_000).toISOString(),
             },
           ]
         : [],

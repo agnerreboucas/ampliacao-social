@@ -21,7 +21,6 @@ import { Route as SocialMapaRouteImport } from './routes/social/mapa'
 import { Route as SocialImpulsionamentosRouteImport } from './routes/social/impulsionamentos'
 import { Route as SocialImportarRouteImport } from './routes/social/importar'
 import { Route as SocialHistoricoRouteImport } from './routes/social/historico'
-import { Route as SocialGeralRouteImport } from './routes/social/geral'
 import { Route as SocialEquipeRouteImport } from './routes/social/equipe'
 import { Route as SocialConteudoRouteImport } from './routes/social/conteudo'
 import { Route as SocialContasRouteImport } from './routes/social/contas'
@@ -92,11 +91,6 @@ const SocialHistoricoRoute = SocialHistoricoRouteImport.update({
   path: '/historico',
   getParentRoute: () => SocialRoute,
 } as any)
-const SocialGeralRoute = SocialGeralRouteImport.update({
-  id: '/geral',
-  path: '/geral',
-  getParentRoute: () => SocialRoute,
-} as any)
 const SocialEquipeRoute = SocialEquipeRouteImport.update({
   id: '/equipe',
   path: '/equipe',
@@ -152,7 +146,6 @@ export interface FileRoutesByFullPath {
   '/social/contas': typeof SocialContasRoute
   '/social/conteudo': typeof SocialConteudoRoute
   '/social/equipe': typeof SocialEquipeRoute
-  '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
@@ -175,7 +168,6 @@ export interface FileRoutesByTo {
   '/social/contas': typeof SocialContasRoute
   '/social/conteudo': typeof SocialConteudoRoute
   '/social/equipe': typeof SocialEquipeRoute
-  '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
@@ -200,7 +192,6 @@ export interface FileRoutesById {
   '/social/contas': typeof SocialContasRoute
   '/social/conteudo': typeof SocialConteudoRoute
   '/social/equipe': typeof SocialEquipeRoute
-  '/social/geral': typeof SocialGeralRoute
   '/social/historico': typeof SocialHistoricoRoute
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
@@ -226,7 +217,6 @@ export interface FileRouteTypes {
     | '/social/contas'
     | '/social/conteudo'
     | '/social/equipe'
-    | '/social/geral'
     | '/social/historico'
     | '/social/importar'
     | '/social/impulsionamentos'
@@ -249,7 +239,6 @@ export interface FileRouteTypes {
     | '/social/contas'
     | '/social/conteudo'
     | '/social/equipe'
-    | '/social/geral'
     | '/social/historico'
     | '/social/importar'
     | '/social/impulsionamentos'
@@ -273,7 +262,6 @@ export interface FileRouteTypes {
     | '/social/contas'
     | '/social/conteudo'
     | '/social/equipe'
-    | '/social/geral'
     | '/social/historico'
     | '/social/importar'
     | '/social/impulsionamentos'
@@ -383,13 +371,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SocialHistoricoRouteImport
       parentRoute: typeof SocialRoute
     }
-    '/social/geral': {
-      id: '/social/geral'
-      path: '/geral'
-      fullPath: '/social/geral'
-      preLoaderRoute: typeof SocialGeralRouteImport
-      parentRoute: typeof SocialRoute
-    }
     '/social/equipe': {
       id: '/social/equipe'
       path: '/equipe'
@@ -461,7 +442,6 @@ interface SocialRouteChildren {
   SocialContasRoute: typeof SocialContasRoute
   SocialConteudoRoute: typeof SocialConteudoRoute
   SocialEquipeRoute: typeof SocialEquipeRoute
-  SocialGeralRoute: typeof SocialGeralRoute
   SocialHistoricoRoute: typeof SocialHistoricoRoute
   SocialImportarRoute: typeof SocialImportarRoute
   SocialImpulsionamentosRoute: typeof SocialImpulsionamentosRoute
@@ -481,7 +461,6 @@ const SocialRouteChildren: SocialRouteChildren = {
   SocialContasRoute: SocialContasRoute,
   SocialConteudoRoute: SocialConteudoRoute,
   SocialEquipeRoute: SocialEquipeRoute,
-  SocialGeralRoute: SocialGeralRoute,
   SocialHistoricoRoute: SocialHistoricoRoute,
   SocialImportarRoute: SocialImportarRoute,
   SocialImpulsionamentosRoute: SocialImpulsionamentosRoute,
