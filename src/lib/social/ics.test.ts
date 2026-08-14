@@ -314,3 +314,57 @@ test("o plano conta quantos eventos se repetem", () => {
 
   assert.equal(plano.comRepeticao, 1);
 });
+
+// --- Fuso declarado no parâmetro --------------------------------------------
+
+test("hora com TZID é lida no fuso declarado, não no do servidor", () => {
+  // A exportação real da agenda de uma campanha em São Paulo traz dezenas de
+  // eventos assim. Lê-los como hora do servidor coloca todos três horas fora
+  // do lugar numa máquina em UTC — que é onde a plataforma vai rodar.
+  const texto = arquivo(
+    [
+      "BEGIN:VEVENT",
+      "UID:tz-1",
+      "SUMMARY:Gravação às 19h",
+      "DTSTART;TZID=America/Sao_Paulo:20240903T190000",
+      "DTEND;TZID=America/Sao_Paulo:20240903T200000",
+      "END:VEVENT",
+    ].join("\n"),
+  );
+
+  const { eventos } = lerIcs(texto);
+  // São Paulo está três horas atrás de Greenwich: 19h lá são 22h em UTC.
+  assert.equal(eventos[0].comecaEm, "2024-09-03T22:00:00.000Z");
+  assert.equal(eventos[0].terminaEm, "2024-09-03T23:00:00.000Z");
+});
+
+test("fuso desconhecido não derruba o evento", () => {
+  const texto = arquivo(
+    [
+      "BEGIN:VEVENT",
+      "UID:tz-2",
+      "SUMMARY:Fuso inventado",
+      "DTSTART;TZID=Marte/Olympus:20240903T190000",
+      "END:VEVENT",
+    ].join("\n"),
+  );
+
+  const { eventos, ignorados } = lerIcs(texto);
+  assert.equal(eventos.length, 1);
+  assert.equal(ignorados.length, 0);
+});
+
+test("o parâmetro do fuso não vira campo do evento", () => {
+  // O nome do campo é "DTSTART", com ou sem parâmetro depois do ponto e vírgula.
+  const texto = arquivo(
+    [
+      "BEGIN:VEVENT",
+      "UID:tz-3",
+      "SUMMARY:Teste",
+      "DTSTART;TZID=UTC:20240903T190000",
+      "END:VEVENT",
+    ].join("\n"),
+  );
+
+  assert.equal(lerIcs(texto).eventos[0].comecaEm, "2024-09-03T19:00:00.000Z");
+});

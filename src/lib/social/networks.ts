@@ -101,6 +101,35 @@ export const NETWORKS: Record<NetworkId, NetworkCapabilities> = {
     supportsAudienceInsights: false,
     phase: 4,
   },
+  /**
+   * Threads é a sexta rede, e a escolha tem um motivo prático.
+   *
+   * Ela é da Meta: entra pela mesma autorização que Instagram e Facebook já
+   * exigem, sem aplicativo novo para aprovar e sem custo de API. O X cobra
+   * assinatura para publicar por API, e seria a única rede da lista com conta a
+   * pagar — trocar um pelo outro aqui é mudar um bloco deste arquivo.
+   *
+   * Não aceita story nem impulsionamento próprio, e a API não devolve perfil de
+   * público. A plataforma já sabe lidar com isso: o cartão aparece sem
+   * investimento e a tela de Público explica a ausência.
+   */
+  threads: {
+    id: "threads",
+    label: "Threads",
+    color: "oklch(0.35 0.02 260)",
+    gradient: "linear-gradient(135deg, oklch(0.45 0.03 260), oklch(0.2 0.02 265))",
+    formats: ["imagem", "carrossel", "video"],
+    captionMaxLength: 500,
+    carousel: { min: 2, max: 20 },
+    video: { minSeconds: 1, maxSeconds: 300, maxFileMb: 1024 },
+    image: { maxFileMb: 8 },
+    aspectRatios: ["1:1", "4:5", "9:16"],
+    supportsBoost: false,
+    supportsDirectMessages: false,
+    supportsComments: true,
+    supportsAudienceInsights: false,
+    phase: 4,
+  },
   linkedin: {
     id: "linkedin",
     label: "LinkedIn",

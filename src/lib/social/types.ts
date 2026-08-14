@@ -2,7 +2,7 @@
 // Escopo restrito à camada social (orgânico + pago). Nada de e-commerce,
 // catálogo, carrinho ou pedidos — ver docs/prd-plataforma-social.md, seção 1.4.
 
-export type NetworkId = "instagram" | "facebook" | "tiktok" | "linkedin" | "youtube";
+export type NetworkId = "instagram" | "facebook" | "tiktok" | "linkedin" | "youtube" | "threads";
 
 /** Estado da conexão OAuth de um perfil social (PRD 3.1). */
 export type ConnectionStatus = "ativa" | "expirada" | "erro_permissao" | "desconectada";

@@ -141,6 +141,15 @@ export type OpcoesDaMalha = {
    * convexo, e abaixo de 1,3 aparecem farpas entre municípios distantes.
    */
   esticamento?: number;
+  /**
+   * Aparar as células pela envoltória convexa dos sítios.
+   *
+   * Fazia sentido quando a envoltória era a única borda que existia. Depois que
+   * o desenho passou a recortar pelo contorno côncavo do estado, o corte
+   * convexo virou um segundo limite mais apertado que o primeiro — e as
+   * células paravam antes da borda, deixando um fio branco em volta do mapa.
+   */
+  limitarPelaEnvoltoria?: boolean;
 };
 
 /**
@@ -158,7 +167,8 @@ export function construirMalha(sitios: Ponto[], opcoes: OpcoesDaMalha = {}): Pol
   // O sentido do contorno decide para que lado a normal aponta. Normalizar aqui
   // evita depender de como a envoltória saiu ordenada — com o sinal trocado, o
   // corte guardaria o lado de fora e todas as células virariam nada.
-  const contorno = emSentidoAntiHorario(envoltoriaConvexa(sitios));
+  const limitarPelaEnvoltoria = opcoes.limitarPelaEnvoltoria ?? true;
+  const contorno = limitarPelaEnvoltoria ? emSentidoAntiHorario(envoltoriaConvexa(sitios)) : [];
 
   return sitios.map((sitio, indice) => {
     const ordenados = sitios

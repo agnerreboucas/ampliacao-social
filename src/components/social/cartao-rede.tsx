@@ -62,11 +62,11 @@ export function CartaoDeRede({
     >
       <span aria-hidden className="h-1 w-full shrink-0" style={{ background: rede.gradient }} />
 
-      <div className="flex flex-1 flex-col gap-4 p-5">
+      <div className="flex flex-1 flex-col gap-2.5 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="truncate font-semibold">{rede.label}</h3>
-            <p className="text-xs text-muted-foreground">
+            <h3 className="truncate text-sm font-semibold">{rede.label}</h3>
+            <p className="text-[11px] text-muted-foreground">
               {contas === 1 ? "1 perfil" : `${contas} perfis`}
             </p>
           </div>
@@ -86,12 +86,12 @@ export function CartaoDeRede({
 
         <div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-semibold tabular-nums">
+            <span className="text-xl font-semibold tabular-nums">
               {formatNumber(resumo.followers)}
             </span>
             <span
               className={cn(
-                "text-sm font-medium tabular-nums",
+                "text-xs font-medium tabular-nums",
                 resumo.followersDelta >= 0 ? "text-emerald-600" : "text-destructive",
               )}
             >
@@ -99,30 +99,33 @@ export function CartaoDeRede({
               {formatNumber(resumo.followersDelta)}
             </span>
           </div>
-          <p className="text-xs text-muted-foreground">seguidores no período</p>
+          <p className="text-[11px] text-muted-foreground">seguidores no período</p>
         </div>
 
         <Faisca valores={faisca} cor={rede.color} />
 
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        {/*
+          Quatro linhas de métrica viraram três, e a de "alcance pago" saiu.
+          Com seis redes o painel passou a exigir rolagem para mostrar a
+          última — e um cartão que só se vê rolando não cumpre o papel de dar
+          o panorama de relance. As três que ficaram respondem "quanto",
+          "quão bem" e "para onde"; a fatia paga continua no detalhe da rede.
+        */}
+        <dl className="grid grid-cols-3 gap-x-3 text-[11px]">
           <Linha rotulo="Alcance" valor={formatCompact(alcance)} />
           <Linha
-            rotulo="Taxa de engajamento"
+            rotulo="Engajamento"
             valor={resumo.engagementRate > 0 ? formatPercent(resumo.engagementRate) : "—"}
           />
           <Linha
-            rotulo="Do alcance foi pago"
-            valor={alcance > 0 ? formatPercent(fatiaPaga * 100, 0) : "—"}
-          />
-          <Linha
-            rotulo="Variação do alcance"
+            rotulo="Variação"
             valor={resumo.reachDelta !== 0 ? formatSignedPercent(resumo.reachDelta) : "—"}
             tom={resumo.reachDelta < 0 ? "queda" : undefined}
           />
         </dl>
 
         {publicacoes > 0 || pendentes > 0 ? (
-          <p className="mt-auto border-t border-border pt-3 text-xs text-muted-foreground">
+          <p className="mt-auto border-t border-border pt-2 text-[11px] text-muted-foreground">
             {publicacoes} publicação(ões)
             {pendentes > 0 ? ` · ${pendentes} interação(ões) esperando` : ""}
           </p>
@@ -165,7 +168,7 @@ function Faisca({ valores, cor }: { valores: number[]; cor: string }) {
   }
 
   const largura = 100;
-  const altura = 28;
+  const altura = 20;
   const maximo = Math.max(...valores);
   const minimo = Math.min(...valores);
   // Série plana dividiria por zero; a faixa mínima também evita desenhar a

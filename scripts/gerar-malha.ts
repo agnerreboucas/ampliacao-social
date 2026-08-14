@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 
+import { simplificar, tracarContorno } from "../src/lib/social/contorno.ts";
 import { projetar } from "../src/lib/social/mapa.ts";
 import { MUNICIPIOS_SP } from "../src/lib/social/municipios-sp.ts";
 import { area, construirMalha, type Ponto } from "../src/lib/social/voronoi.ts";
@@ -21,7 +22,30 @@ import { area, construirMalha, type Ponto } from "../src/lib/social/voronoi.ts";
 const CASAS = 3;
 
 const sitios: Ponto[] = MUNICIPIOS_SP.map((municipio) => projetar(municipio.lat, municipio.lon));
-const malha = construirMalha(sitios);
+
+/**
+ * As células crescem de propósito além do contorno.
+ *
+ * Quem recorta é o contorno do estado, no navegador, com `clip-path`. Deixar a
+ * célula transbordar garante que não sobre um fio branco entre o último
+ * município e a borda — e o recorte devolve a forma exata sem geometria
+ * nenhuma do nosso lado. O valor é generoso porque a conta é assimétrica:
+ * transbordar demais não custa nada, e transbordar de menos deixa buraco.
+ */
+const malha = construirMalha(sitios, { esticamento: 9, limitarPelaEnvoltoria: false });
+
+/**
+ * O raio precisa fundir os municípios isolados do oeste com o continente.
+ *
+ * Abaixo de 2,7 o contorno sai com excursões finas até uma sede solta, e no
+ * mapa elas viram fios cinzas saindo do estado. Acima de 3,2 o litoral perde o
+ * recorte e vira uma reta.
+ */
+const contorno = simplificar(tracarContorno(sitios, { raio: 2.9, resolucao: 420 }), 0.0008);
+if (contorno.length < 30) {
+  console.error("O contorno saiu curto demais para ser o estado.");
+  process.exit(1);
+}
 
 const vazias = malha.filter((celula) => celula.length < 3).length;
 if (vazias > 0) {
@@ -60,6 +84,10 @@ if (semArea > 0) {
   process.exit(1);
 }
 
+const caminhoDoContorno = `M${contorno
+  .map(({ x, y }) => `${arredondar(x)},${arredondar(y)}`)
+  .join("L")}Z`;
+
 const linhas = territorios.map(
   (celula, indice) =>
     `  // ${MUNICIPIOS_SP[indice].nome}\n  [${celula.map(([x, y]) => `[${x},${y}]`).join(",")}],`,
@@ -80,6 +108,16 @@ export type Territorio = [number, number][];
 export const MALHA_SP: Territorio[] = [
 ${linhas.join("\n")}
 ];
+
+/**
+ * O contorno do estado, como caminho SVG na mesma caixa de 0 a 1.
+ *
+ * Sai da envoltória côncava das ${MUNICIPIOS_SP.length} sedes — a região a menos de um raio de
+ * alguma delas. É o que dá ao mapa o formato de São Paulo, com litoral
+ * recortado e a ponta do Pontal, que uma envoltória convexa achatava em retas.
+ * Serve de recorte para os territórios e de traço da borda.
+ */
+export const CONTORNO_SP = "${caminhoDoContorno}";
 `;
 
 const destino = new URL("../src/lib/social/malha-sp.ts", import.meta.url);
@@ -91,4 +129,5 @@ const areaTotal = malha.reduce((total, celula) => total + area(celula), 0);
 console.log(`malha-sp.ts: ${territorios.length} territórios, ${vertices} vértices`);
 console.log(`média de ${(vertices / territorios.length).toFixed(1)} vértices por município`);
 console.log(`área somada: ${areaTotal.toFixed(4)} (a caixa do estado tem ~0.67)`);
+console.log(`contorno: ${contorno.length} vértices`);
 console.log(`${(conteudo.length / 1024).toFixed(0)} kB`);

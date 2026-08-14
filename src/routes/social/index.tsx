@@ -130,19 +130,26 @@ function PainelPage() {
             />
           </div>
 
-          {resumo.data ? <Recomendacoes lista={resumo.data.recomendacoes} /> : null}
-
           <SectionCard
             title="Suas redes"
             description="Cada rede com o próprio quadro. Clique em uma para abrir o detalhe dela."
             icon={Radar}
           >
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {data.redes.map((rede) => (
                 <CartaoDeRede key={rede.networkId} {...rede} />
               ))}
             </div>
           </SectionCard>
+
+          {/*
+            As observações vêm depois dos cartões, e não antes.
+            Com seis redes, o bloco de recomendações empurrava as duas últimas
+            para fora da primeira dobra — e cartão que só se vê rolando não dá
+            panorama nenhum. A ordem também ficou mais correta: primeiro o que
+            aconteceu, depois a leitura do que aconteceu.
+          */}
+          {resumo.data ? <Recomendacoes lista={resumo.data.recomendacoes} /> : null}
 
           {resumo.data ? (
             <SectionCard

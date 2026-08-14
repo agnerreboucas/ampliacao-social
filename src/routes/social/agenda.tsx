@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Upload } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -75,6 +75,7 @@ const VISOES: { id: Visao; rotulo: string; explica: string }[] = [
 function AgendaPage() {
   const { projectId, session } = useSocialSession();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [visao, setVisao] = useState<Visao>("tudo");
   const [formato, setFormato] = useState<"mes" | "semana">("mes");
@@ -82,6 +83,10 @@ function AgendaPage() {
   const [diaAberto, setDiaAberto] = useState<string | null>(() => chaveDoDia(new Date()));
   const [editando, setEditando] = useState<Evento | "novo" | null>(null);
   const [importando, setImportando] = useState(false);
+  // Colunas vazias começam recolhidas: o que não tem nada não deveria ocupar um
+  // sexto da largura, e a faixa fina continua dizendo que a etapa existe.
+  const [recolhidas, setRecolhidas] = useState<FaseDoQuadro[]>([]);
+  const [iniciouRecolhidas, setIniciouRecolhidas] = useState(false);
 
   const dados = useQuery({
     queryKey: ["social", "agenda", projectId],
@@ -92,6 +97,27 @@ function AgendaPage() {
   const eventos = dados.data?.eventos ?? [];
   const posts = dados.data?.posts ?? [];
   const podeEditar = can(session?.user.role, "publicar");
+
+  const quadro = montarQuadro(posts);
+
+  const mesDaReferencia = `${referencia.getFullYear()}-${String(referencia.getMonth() + 1).padStart(2, "0")}`;
+  const noMes = (iso: string | null) => iso !== null && chaveDoDia(iso).startsWith(mesDaReferencia);
+  const publicadasNoMes = posts.filter(
+    (post) => post.status === "publicado" && noMes(post.publishedAt),
+  );
+  const agendadasNoMes = posts.filter(
+    (post) => post.status === "agendado" && noMes(post.scheduledFor),
+  );
+
+  // A primeira montagem com dados decide o que já nasce recolhido; depois disso
+  // quem manda é o clique da pessoa, e reavaliar apagaria a escolha dela.
+  useEffect(() => {
+    if (iniciouRecolhidas || dados.isPending) return;
+    setRecolhidas(
+      quadro.filter((coluna) => coluna.posts.length === 0).map((coluna) => coluna.fase),
+    );
+    setIniciouRecolhidas(true);
+  }, [dados.isPending, iniciouRecolhidas, quadro]);
 
   const invalidar = () => queryClient.invalidateQueries({ queryKey: ["social"] });
 
@@ -199,10 +225,17 @@ function AgendaPage() {
           icon={CalendarDays}
         >
           <QuadroDeProducao
-            colunas={montarQuadro(posts)}
+            colunas={quadro}
             onMover={(postId, fase) => mover.mutate({ postId, fase })}
             podeMover={podeMoverPara}
             movendo={mover.isPending ? (mover.variables?.postId ?? null) : null}
+            recolhidas={recolhidas}
+            onAlternar={(fase) =>
+              setRecolhidas((atual) =>
+                atual.includes(fase) ? atual.filter((f) => f !== fase) : [...atual, fase],
+              )
+            }
+            onCriar={podeEditar ? () => navigate({ to: "/social/publicacoes" }) : undefined}
           />
         </SectionCard>
       ) : (
@@ -244,6 +277,19 @@ function AgendaPage() {
             </div>
           }
         >
+          {visao === "publicacao" && formato === "mes" ? (
+            // A pergunta "o que saiu este mês?" não se responde contando
+            // quadradinhos: o total vem escrito.
+            <p className="mb-2 text-sm text-muted-foreground">
+              <strong className="text-foreground">{publicadasNoMes.length}</strong>{" "}
+              {publicadasNoMes.length === 1 ? "publicação" : "publicações"} no mês
+              {agendadasNoMes.length > 0
+                ? `, e mais ${agendadasNoMes.length} agendada${agendadasNoMes.length === 1 ? "" : "s"}`
+                : ""}
+              .
+            </p>
+          ) : null}
+
           {formato === "mes" ? (
             <CalendarioDoMes
               ano={referencia.getFullYear()}

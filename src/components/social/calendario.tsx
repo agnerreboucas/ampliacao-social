@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { CalendarDays, CircleDot, Clock, MapPin, Send } from "lucide-react";
+import { CalendarDays, ChevronLeft, CircleDot, Clock, MapPin, Plus, Send } from "lucide-react";
 
 import {
   chaveDoDia,
@@ -29,6 +29,9 @@ import { cn } from "@/lib/utils";
  */
 
 export type Visao = "producao" | "publicacao" | "tudo";
+
+/** As fases que o quadro oferece como destino — `falhou` não é movimento. */
+export type FaseDoQuadro = Exclude<Post["status"], "falhou">;
 
 const COR_DO_PAPEL: Record<ItemDoDia["papel"], string> = {
   evento: "bg-[oklch(0.62_0.19_10)]",
@@ -316,95 +319,155 @@ function CartaoDePeca({
 }
 
 /**
- * O quadro de produção.
+ * O quadro de produção, com colunas que recolhem.
  *
- * Sem arrastar: os botões de mover são explícitos. Arrastar num quadro com seis
- * colunas é gesto difícil no celular — e a Priscila vai estar no celular. Os
+ * Seis colunas abertas cabem numa tela de mesa e não cabem em nenhuma outra.
+ * Recolher transforma a coluna numa faixa fina com o nome na vertical e a
+ * contagem embaixo — a informação que sobrevive ao recolhimento é justamente a
+ * que faz decidir se vale abrir: quantas peças estão paradas ali.
+ *
+ * As colunas vazias começam recolhidas. É a leitura certa do quadro: o que não
+ * tem nada não deveria ocupar um sexto da largura, e o "0" na faixa continua
+ * dizendo que a etapa existe e está vazia.
+ *
+ * Sem arrastar: os botões de mover são explícitos. Arrastar num quadro de seis
+ * colunas é gesto difícil no celular — e a cobertura acontece no celular. Os
  * botões também dizem quais movimentos existem, que o arrastar esconde até a
  * pessoa tentar.
  */
-/** As fases que o quadro oferece como destino — `falhou` não é movimento. */
-export type FaseDoQuadro = Exclude<Post["status"], "falhou">;
-
 export function QuadroDeProducao({
   colunas,
   onMover,
   podeMover,
   movendo,
+  onCriar,
+  recolhidas,
+  onAlternar,
 }: {
   colunas: { fase: FaseDoQuadro; posts: Post[] }[];
   onMover: (postId: string, fase: FaseDoQuadro) => void;
   podeMover: (de: Post["status"], para: FaseDoQuadro) => boolean;
   movendo: string | null;
+  onCriar?: (fase: FaseDoQuadro) => void;
+  recolhidas: FaseDoQuadro[];
+  onAlternar: (fase: FaseDoQuadro) => void;
 }) {
   return (
     <div className="-mx-1 overflow-x-auto px-1 pb-1">
-      <div className="flex min-w-[62rem] gap-3">
-        {colunas.map((coluna) => (
-          <div key={coluna.fase} className="min-w-0 flex-1">
-            <div className="flex items-baseline justify-between gap-2 border-b border-border pb-1.5">
-              <span className="text-xs font-medium uppercase tracking-[0.08em]">
-                {FASE_LABELS[coluna.fase]}
-              </span>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {coluna.posts.length}
-              </span>
-            </div>
+      {/* `items-start` e altura fixa na faixa: com `stretch`, a coluna recolhida
+          esticava até a altura da maior e o rótulo vertical ia parar fora da
+          tela, justamente a informação que o recolhimento devia preservar. */}
+      <div className="flex items-start gap-3">
+        {colunas.map((coluna, indice) => {
+          const recolhida = recolhidas.includes(coluna.fase);
 
-            <ul className="mt-2 space-y-2">
-              {coluna.posts.length === 0 ? (
-                <li className="rounded-lg border border-dashed border-border p-3 text-center text-[11px] text-muted-foreground">
-                  vazia
-                </li>
+          if (recolhida) {
+            return (
+              <button
+                key={coluna.fase}
+                type="button"
+                onClick={() => onAlternar(coluna.fase)}
+                title={`Abrir ${FASE_LABELS[coluna.fase]}`}
+                className="flex h-72 w-12 shrink-0 flex-col items-center justify-between rounded-2xl border border-border bg-card py-3 transition-colors hover:bg-secondary/60"
+              >
+                <span className="text-xs tabular-nums text-accent">{indice + 1}</span>
+                <span
+                  className="flex flex-1 items-center justify-center py-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
+                  style={{ writingMode: "vertical-rl" }}
+                >
+                  {FASE_LABELS[coluna.fase]}
+                </span>
+                <span className="grid size-7 place-items-center rounded-full bg-secondary text-xs tabular-nums">
+                  {coluna.posts.length}
+                </span>
+              </button>
+            );
+          }
+
+          return (
+            <div
+              key={coluna.fase}
+              className="w-64 shrink-0 self-stretch rounded-2xl border border-border p-3"
+            >
+              <div className="flex items-center gap-2">
+                <span className="grid size-6 shrink-0 place-items-center rounded-md bg-secondary text-[11px] tabular-nums text-accent">
+                  {indice + 1}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs font-medium uppercase tracking-[0.08em]">
+                  {FASE_LABELS[coluna.fase]}
+                </span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {coluna.posts.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onAlternar(coluna.fase)}
+                  aria-label={`Recolher ${FASE_LABELS[coluna.fase]}`}
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-secondary"
+                >
+                  <ChevronLeft className="size-3.5" />
+                </button>
+              </div>
+
+              {onCriar ? (
+                <button
+                  type="button"
+                  onClick={() => onCriar(coluna.fase)}
+                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 text-[11px] text-muted-foreground transition-colors hover:border-accent/60 hover:text-foreground"
+                >
+                  <Plus className="size-3.5" /> Nova peça aqui
+                </button>
               ) : null}
 
-              {coluna.posts.map((post) => (
-                <li key={post.id} className="rounded-lg border border-border p-2.5">
-                  <Link
-                    to="/social/publicacao/$postId"
-                    params={{ postId: post.id }}
-                    className="block"
-                  >
-                    <p className="line-clamp-3 text-xs leading-snug">{resumo(post)}</p>
-                  </Link>
+              <ul className="mt-2 space-y-2">
+                {coluna.posts.map((post) => (
+                  <li key={post.id} className="rounded-lg border border-border p-2.5">
+                    <Link
+                      to="/social/publicacao/$postId"
+                      params={{ postId: post.id }}
+                      className="block"
+                    >
+                      <p className="line-clamp-3 text-xs leading-snug">{resumo(post)}</p>
+                    </Link>
 
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-                    {post.scheduledFor ? (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                      {post.scheduledFor ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="size-3" />
+                          {new Date(post.scheduledFor).toLocaleDateString("pt-BR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                          })}
+                        </span>
+                      ) : null}
                       <span className="inline-flex items-center gap-1">
-                        <Clock className="size-3" />
-                        {new Date(post.scheduledFor).toLocaleDateString("pt-BR", {
-                          day: "2-digit",
-                          month: "2-digit",
-                        })}
+                        <CircleDot className="size-3" />
+                        {post.accountIds.length}
                       </span>
-                    ) : null}
-                    <span className="inline-flex items-center gap-1">
-                      <CircleDot className="size-3" />
-                      {post.accountIds.length}
-                    </span>
-                  </div>
+                    </div>
 
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {colunas
-                      .map((outra) => outra.fase)
-                      .filter((fase) => podeMover(post.status, fase))
-                      .map((fase) => (
-                        <button
-                          key={fase}
-                          type="button"
-                          disabled={movendo === post.id}
-                          onClick={() => onMover(post.id, fase)}
-                          className="rounded border border-border px-1.5 py-0.5 text-[10px] transition-colors hover:bg-secondary disabled:opacity-50"
-                        >
-                          → {FASE_LABELS[fase]}
-                        </button>
-                      ))}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {colunas
+                        .map((outra) => outra.fase)
+                        .filter((fase) => podeMover(post.status, fase))
+                        .map((fase) => (
+                          <button
+                            key={fase}
+                            type="button"
+                            disabled={movendo === post.id}
+                            onClick={() => onMover(post.id, fase)}
+                            className="rounded border border-border px-1.5 py-0.5 text-[10px] transition-colors hover:bg-secondary disabled:opacity-50"
+                          >
+                            → {FASE_LABELS[fase]}
+                          </button>
+                        ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

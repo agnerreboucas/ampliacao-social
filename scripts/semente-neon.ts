@@ -1,6 +1,7 @@
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { NETWORKS } from "../src/lib/social/networks.ts";
 import { serializar, type EstadoPersistivel } from "../src/lib/social/snapshot.ts";
 import { FAIXAS_ETARIAS } from "../src/lib/social/types.ts";
 import type {
@@ -188,6 +189,16 @@ const SEMENTES_DE_CONTA: SementeDeConta[] = [
     mensageriaAprovada: false,
   },
   {
+    id: "acc-th-neon",
+    networkId: "threads",
+    handle: "@neoncunha",
+    seguidoresBase: 5200,
+    crescimentoDiario: 31,
+    fatiaPaga: 0,
+    contaDeAnuncios: false,
+    mensageriaAprovada: false,
+  },
+  {
     id: "acc-li-neon",
     networkId: "linkedin",
     handle: "/in/neoncunha",
@@ -271,6 +282,7 @@ function serieDaConta(semente: SementeDeConta): DailyMetric[] {
  */
 const PESOS_POR_REDE: Record<NetworkId, number[]> = {
   //          13-17 18-24 25-34 35-44 45-54 55-64  65+
+  threads: [0.02, 0.24, 0.36, 0.21, 0.11, 0.04, 0.02],
   instagram: [0.03, 0.21, 0.33, 0.22, 0.13, 0.06, 0.02],
   facebook: [0.01, 0.07, 0.19, 0.25, 0.23, 0.16, 0.09],
   tiktok: [0.09, 0.36, 0.31, 0.15, 0.06, 0.02, 0.01],
@@ -321,7 +333,7 @@ function perfilDaConta(semente: SementeDeConta, serie: DailyMetric[]): AudienceI
   if (!expoePerfil) {
     return {
       available: false,
-      unavailableReason: `A API do ${semente.networkId === "tiktok" ? "TikTok" : "YouTube"} não expõe dados de perfil do público para esta conta.`,
+      unavailableReason: `A API do ${NETWORKS[semente.networkId].label} não expõe dados de perfil do público para esta conta.`,
       ...base,
       topInteractors: [],
       activityByHour: [],
@@ -391,7 +403,7 @@ const PAUTA: SementeDePeca[] = [
       "Nossa proposta para a saúde da região: mais horário de atendimento no posto, agendamento pelo celular e transporte para exame. Arrasta pro lado. #proposta #saude",
     hora: 12,
     atras: 4,
-    redes: ["acc-ig-neon", "acc-fb-neon"],
+    redes: ["acc-ig-neon", "acc-fb-neon", "acc-th-neon"],
     peso: 1.4,
   },
   {
@@ -408,7 +420,7 @@ const PAUTA: SementeDePeca[] = [
       "Dona Marlene esperou dois anos por uma consulta. É por histórias como a dela que a fila do SUS entrou no centro do nosso plano. #depoimento #saude",
     hora: 20,
     atras: 8,
-    redes: ["acc-ig-neon", "acc-fb-neon", "acc-tt-neon"],
+    redes: ["acc-ig-neon", "acc-fb-neon", "acc-tt-neon", "acc-th-neon"],
     peso: 2.4,
   },
   {

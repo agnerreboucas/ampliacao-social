@@ -70,7 +70,7 @@ if ((await campoEmail.count()) === 0) {
   if (/SUAS REDES/i.test(painel)) console.log("✓ o painel traz os cartões por rede");
   else erros.push("os cartões por rede não apareceram no painel");
 
-  for (const rede of ["Instagram", "Facebook", "TikTok", "YouTube", "LinkedIn"]) {
+  for (const rede of ["Instagram", "Facebook", "TikTok", "YouTube", "LinkedIn", "Threads"]) {
     if (painel.includes(rede)) console.log(`✓ cartão de ${rede}`);
     else erros.push(`faltou o cartão de ${rede}`);
   }
@@ -146,6 +146,14 @@ if ((await campoEmail.count()) === 0) {
   await pagina.waitForTimeout(2500);
   // Territórios, não pontos: o mapa desenha um caminho por município, e o
   // recorte metropolitano repete os mesmos 645 num segundo SVG.
+  // O contorno do estado entra como recorte e como traço: sem ele o mapa volta
+  // a ter borda reta, que foi o defeito que este teste existe para pegar.
+  if ((await pagina.locator("clipPath#contorno-do-estado path").count()) > 0) {
+    console.log("✓ o mapa recorta pelo contorno do estado");
+  } else {
+    erros.push("o contorno do estado não está sendo usado como recorte");
+  }
+
   const territorios = await pagina.locator("svg path").count();
   if (territorios >= 1290) {
     console.log(`✓ o mapa desenhou ${territorios} territórios (estado + recorte)`);

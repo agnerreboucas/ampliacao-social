@@ -22,7 +22,13 @@ import {
   temCredencial,
   lerDescoberta,
 } from "@/lib/social/credenciais.server";
-import { NETWORKS, hasBlockingIssues, statusLabel, validateDraft } from "@/lib/social/networks";
+import {
+  NETWORKS,
+  NETWORK_IDS,
+  hasBlockingIssues,
+  statusLabel,
+  validateDraft,
+} from "@/lib/social/networks";
 import { can } from "@/lib/social/permissions";
 import { FASE_LABELS } from "@/lib/social/format";
 import { aplicarModelo, separarEnviaveis } from "@/lib/social/relacionamento";
@@ -544,7 +550,7 @@ export const conectarConta = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       projectId: z.string(),
-      networkId: z.enum(["instagram", "facebook", "tiktok", "linkedin", "youtube"]),
+      networkId: z.enum(NETWORK_IDS as [NetworkId, ...NetworkId[]]),
       handle: z.string().min(2),
       displayName: z.string().min(1),
     }),
@@ -2775,7 +2781,7 @@ export const importarHistorico = createServerFn({ method: "POST" })
 export const obterRede = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
-      networkId: z.enum(["instagram", "facebook", "tiktok", "linkedin", "youtube"]),
+      networkId: z.enum(NETWORK_IDS as [NetworkId, ...NetworkId[]]),
       projectId: z.string().optional(),
       period: periodSchema,
     }),

@@ -73,13 +73,78 @@ function limparValor(bruto: string): string {
 }
 
 /**
- * Converte a data do `.ics` para ISO local.
+ * O deslocamento de um fuso nomeado num instante, em minutos.
  *
- * Três formatos aparecem: `20260815` (dia inteiro), `20260815T090000`
- * (hora local) e `20260815T120000Z` (UTC). O `Z` é o único caso em que há
- * conversão de fuso — os outros dois já vêm no horário de quem escreveu.
+ * `Intl` carrega a base de fusos completa no Node e no navegador; reimplementar
+ * as regras de horário de verão aqui seria escrever de novo um dado que já vem
+ * com a plataforma — e errar nas bordas, que é onde ele importa.
  */
-export function lerDataDoIcs(valor: string): { iso: string; diaInteiro: boolean } | null {
+function deslocamentoDoFuso(instante: number, fuso: string): number {
+  const formatador = new Intl.DateTimeFormat("en-US", {
+    timeZone: fuso,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
+  const partes = Object.fromEntries(
+    formatador.formatToParts(new Date(instante)).map((parte) => [parte.type, parte.value]),
+  );
+
+  const comoUtc = Date.UTC(
+    Number(partes.year),
+    Number(partes.month) - 1,
+    Number(partes.day),
+    // Meia-noite volta como "24" em algumas versões do ICU.
+    Number(partes.hour) % 24,
+    Number(partes.minute),
+    Number(partes.second),
+  );
+
+  return (comoUtc - instante) / 60000;
+}
+
+/**
+ * O instante em que um horário de parede acontece, num fuso nomeado.
+ *
+ * Duas passadas: a primeira estima o deslocamento pelo palpite, a segunda o
+ * confirma no instante corrigido. É o que resolve as horas que ficam em cima da
+ * virada do horário de verão, onde o deslocamento antes e depois é diferente.
+ */
+function instanteNaZona(
+  ano: number,
+  mes: number,
+  dia: number,
+  hora: number,
+  minuto: number,
+  segundo: number,
+  fuso: string,
+): number {
+  const palpite = Date.UTC(ano, mes - 1, dia, hora, minuto, segundo);
+  const primeiro = palpite - deslocamentoDoFuso(palpite, fuso) * 60000;
+  return palpite - deslocamentoDoFuso(primeiro, fuso) * 60000;
+}
+
+/**
+ * Converte a data do `.ics` para um instante.
+ *
+ * Quatro formas aparecem em arquivos reais do Google: `20260815` (dia inteiro),
+ * `20260815T120000Z` (UTC), `20260815T090000` com `TZID=America/Sao_Paulo` no
+ * parâmetro, e `20260815T090000` sem nada — hora de parede sem fuso declarado.
+ *
+ * O `TZID` é o caso que mais dói se for ignorado: a exportação da agenda de uma
+ * campanha em São Paulo traz dezenas de eventos assim, e lê-los como hora do
+ * servidor coloca todos três horas fora do lugar numa máquina em UTC. Aqui o
+ * fuso é respeitado quando vem declarado.
+ */
+export function lerDataDoIcs(
+  valor: string,
+  fuso?: string,
+): { iso: string; diaInteiro: boolean } | null {
   const limpo = valor.trim();
 
   const soData = /^(\d{4})(\d{2})(\d{2})$/.exec(limpo);
@@ -95,27 +160,46 @@ export function lerDataDoIcs(valor: string): { iso: string; diaInteiro: boolean 
   if (!comHora) return null;
 
   const [, ano, mes, dia, hora, minuto, segundo, zulu] = comHora;
-  const data = zulu
-    ? new Date(
-        Date.UTC(
-          Number(ano),
-          Number(mes) - 1,
-          Number(dia),
-          Number(hora),
-          Number(minuto),
-          Number(segundo),
-        ),
-      )
-    : new Date(
+
+  if (zulu) {
+    const utc = Date.UTC(
+      Number(ano),
+      Number(mes) - 1,
+      Number(dia),
+      Number(hora),
+      Number(minuto),
+      Number(segundo),
+    );
+    return { iso: new Date(utc).toISOString(), diaInteiro: false };
+  }
+
+  if (fuso) {
+    try {
+      const instante = instanteNaZona(
         Number(ano),
-        Number(mes) - 1,
+        Number(mes),
         Number(dia),
         Number(hora),
         Number(minuto),
         Number(segundo),
+        fuso,
       );
+      return { iso: new Date(instante).toISOString(), diaInteiro: false };
+    } catch {
+      // Fuso desconhecido para o `Intl`: cai para hora de parede, que é o
+      // mesmo que fazer sem a informação — e melhor que recusar o evento.
+    }
+  }
 
-  return { iso: data.toISOString(), diaInteiro: false };
+  const local = new Date(
+    Number(ano),
+    Number(mes) - 1,
+    Number(dia),
+    Number(hora),
+    Number(minuto),
+    Number(segundo),
+  );
+  return { iso: local.toISOString(), diaInteiro: false };
 }
 
 export function lerIcs(texto: string): LeituraDoIcs {
@@ -135,7 +219,7 @@ export function lerIcs(texto: string): LeituraDoIcs {
     if (linha.trim() === "END:VEVENT") {
       dentro = false;
       const titulo = limparValor(campos.SUMMARY ?? "") || "(sem título)";
-      const inicio = campos.DTSTART ? lerDataDoIcs(campos.DTSTART) : null;
+      const inicio = campos.DTSTART ? lerDataDoIcs(campos.DTSTART, campos.DTSTART__TZID) : null;
 
       if (!inicio) {
         ignorados.push({ titulo, motivo: "sem data de início legível" });
@@ -149,7 +233,7 @@ export function lerIcs(texto: string): LeituraDoIcs {
         continue;
       }
 
-      const fim = campos.DTEND ? lerDataDoIcs(campos.DTEND) : null;
+      const fim = campos.DTEND ? lerDataDoIcs(campos.DTEND, campos.DTEND__TZID) : null;
 
       eventos.push({
         uid: campos.UID.trim(),
@@ -173,8 +257,13 @@ export function lerIcs(texto: string): LeituraDoIcs {
 
     // "DTSTART;VALUE=DATE" e "DTSTART" são o mesmo campo: os parâmetros depois
     // do ponto e vírgula não fazem parte do nome.
-    const nome = linha.slice(0, separador).split(";")[0].trim().toUpperCase();
+    const cabecalho = linha.slice(0, separador);
+    const nome = cabecalho.split(";")[0].trim().toUpperCase();
     campos[nome] = linha.slice(separador + 1);
+
+    // O fuso vem no parâmetro, não no valor: "DTSTART;TZID=America/Sao_Paulo".
+    const fuso = /TZID=([^;:]+)/i.exec(cabecalho);
+    if (fuso) campos[`${nome}__TZID`] = fuso[1].trim();
   }
 
   return { eventos, ignorados };

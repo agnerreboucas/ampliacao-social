@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { FAIXAS_IPS, PROPORCAO_DO_MAPA, faixaDoIps, type PontoNoMapa } from "@/lib/social/mapa";
-import { MALHA_SP } from "@/lib/social/malha-sp";
+import { CONTORNO_SP, MALHA_SP } from "@/lib/social/malha-sp";
 import { formatCompact, formatCurrency, formatNumber } from "@/lib/social/format";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +37,17 @@ const ALTURA = Math.round(LARGURA * PROPORCAO_DO_MAPA);
 const RECORTE_METROPOLITANO = { x: 0.678, y: 0.406, largura: 0.112, altura: 0.082 };
 
 const CINZA_SEM_ENTREGA = "#e7e5e4";
+
+/**
+ * O caminho do contorno vem numa caixa de 0 a 1; o SVG desenha em pixels.
+ *
+ * Escalar aqui, e não guardar já escalado, mantém o dado independente do
+ * tamanho do desenho — o recorte metropolitano usa a mesma string com outra
+ * janela.
+ */
+function escalarCaminho(caminho: string, escala: number): string {
+  return caminho.replace(/-?\d+(\.\d+)?/g, (numero) => (Number(numero) * escala).toFixed(1));
+}
 const COR_DA_CAPITAL = "#1c1917";
 
 export function MapaDeSaoPaulo({
@@ -121,7 +132,26 @@ export function MapaDeSaoPaulo({
           role="img"
           aria-label={`Mapa do estado de São Paulo com ${pontos.length} municípios em territórios, coloridos por ${visao === "prioridade" ? "prioridade" : "alcance da campanha"}.`}
         >
-          {desenhar(LARGURA, "estado")}
+          {/* O recorte é o que dá ao mapa o formato do estado. Os territórios
+              transbordam de propósito e o contorno apara — assim não sobra fio
+              branco entre o último município e a borda. */}
+          <defs>
+            <clipPath id="contorno-do-estado" clipPathUnits="userSpaceOnUse">
+              <path d={escalarCaminho(CONTORNO_SP, LARGURA)} />
+            </clipPath>
+          </defs>
+
+          <g clipPath="url(#contorno-do-estado)">{desenhar(LARGURA, "estado")}</g>
+
+          <path
+            d={escalarCaminho(CONTORNO_SP, LARGURA)}
+            fill="none"
+            stroke="var(--color-foreground)"
+            strokeWidth={1.6}
+            strokeLinejoin="round"
+            opacity={0.5}
+            pointerEvents="none"
+          />
 
           {/* A moldura do recorte, para quem olha saber de onde ele veio. */}
           <rect
@@ -187,7 +217,7 @@ export function MapaDeSaoPaulo({
             role="img"
             aria-label="Recorte ampliado da região metropolitana de São Paulo."
           >
-            {desenhar(LARGURA, "metro")}
+            <g clipPath="url(#contorno-do-estado)">{desenhar(LARGURA, "metro")}</g>
             {capital ? (
               <circle
                 cx={capital.x * LARGURA}
