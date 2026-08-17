@@ -23,6 +23,13 @@ import {
 } from "@/components/social/primitives";
 import { NOME_DO_FORMATO, type DesempenhoDoGrupo } from "@/lib/social/conteudo";
 import {
+  BLOCOS,
+  DIAS_CURTOS,
+  type HorariosDoFormato,
+  type MapaDeHorarios,
+  type Recomendacao,
+} from "@/lib/social/horarios";
+import {
   POST_STATUS_LABELS,
   formatCompact,
   formatDateTime,
@@ -101,6 +108,14 @@ function ConteudoPage() {
                 />
               </div>
             )}
+          </SectionCard>
+
+          <SectionCard
+            title="Quando publicar"
+            description="Do que já foi ao ar: em que dia e em que faixa do dia a campanha alcança mais gente."
+            icon={Clock}
+          >
+            <QuandoPublicar horarios={dado.horarios} />
           </SectionCard>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -193,6 +208,253 @@ function ConteudoPage() {
           </SectionCard>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * O mapa de calor e as conclusões que saem dele.
+ *
+ * A ordem é deliberada: **a recomendação vem antes do mapa**. Quem abre a tela
+ * quer saber que horas publicar, não estudar uma grade — o mapa fica logo
+ * abaixo, para quem vai discordar da recomendação e precisa ver de onde ela saiu.
+ *
+ * A cor mede alcance médio, e a escala vem só das casas confiáveis: uma casa de
+ * uma peça com alcance fora da curva esticaria a régua e achataria o resto do
+ * mapa até tudo parecer igual.
+ */
+function QuandoPublicar({
+  horarios,
+}: {
+  horarios: {
+    mapa: MapaDeHorarios;
+    melhoresCasas: Recomendacao[];
+    melhoresBlocos: Recomendacao[];
+    porFormato: HorariosDoFormato[];
+  };
+}) {
+  const { mapa, melhoresCasas, melhoresBlocos: blocos, porFormato } = horarios;
+
+  if (mapa.pecas === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Nenhuma publicação com data e números no período — sem isso não há horário a recomendar.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div>
+          <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+            Melhores horários
+          </p>
+          {blocos.length === 0 ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              As publicações estão espalhadas demais pelos horários para apontar um melhor. Publicar
+              mais vezes na mesma faixa é o que faz o padrão aparecer.
+            </p>
+          ) : (
+            <ol className="mt-2 space-y-2">
+              {blocos.map((bloco, indice) => (
+                <LinhaDeHorario key={bloco.bloco} posicao={indice + 1} recomendacao={bloco} />
+              ))}
+            </ol>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+            Cruzando com o dia da semana
+          </p>
+          {melhoresCasas.length === 0 ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Ainda não há publicações suficientes num mesmo dia e horário para cruzar os dois. O
+              ranking ao lado, que soma os sete dias, já é confiável antes deste.
+            </p>
+          ) : (
+            <ol className="mt-2 space-y-2">
+              {melhoresCasas.map((casa, indice) => (
+                <LinhaDeHorario
+                  key={`${casa.dia}-${casa.bloco}`}
+                  posicao={indice + 1}
+                  recomendacao={casa}
+                />
+              ))}
+            </ol>
+          )}
+        </div>
+      </div>
+
+      <MapaDeCalor mapa={mapa} />
+
+      <div>
+        <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+          Por tipo de conteúdo
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          A diferença entre formatos é real — story é consumido no intervalo do dia e reels à noite.
+          Aqui o corte é só por faixa do dia: dividir as peças por formato já reduz muito a amostra.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {porFormato.map((item) => (
+            <div key={item.formato} className="rounded-xl border border-border p-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium">{item.rotulo}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {item.pecas} {item.pecas === 1 ? "peça" : "peças"}
+                </span>
+              </div>
+
+              {item.melhores.length === 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">{item.ressalva}</p>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {item.melhores.map((melhor) => (
+                    <li key={melhor.bloco} className="text-sm">
+                      <span className="font-medium tabular-nums">{melhor.quando}</span>
+                      <span className="block text-xs tabular-nums text-muted-foreground">
+                        {formatCompact(melhor.alcanceMedio)} de alcance médio ·{" "}
+                        <ContraMedia valor={melhor.contraMedia} />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LinhaDeHorario({
+  posicao,
+  recomendacao,
+}: {
+  posicao: number;
+  recomendacao: Recomendacao;
+}) {
+  return (
+    <li className="flex items-start gap-3 rounded-xl border border-border p-3">
+      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-xs tabular-nums">
+        {posicao}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{recomendacao.quando}</p>
+        <p className="text-xs tabular-nums text-muted-foreground">
+          {formatCompact(recomendacao.alcanceMedio)} de alcance médio ·{" "}
+          {formatPercent(recomendacao.taxaMedia)} de interação · {recomendacao.pecas}{" "}
+          {recomendacao.pecas === 1 ? "peça" : "peças"}
+        </p>
+      </div>
+      <ContraMedia valor={recomendacao.contraMedia} destaque />
+    </li>
+  );
+}
+
+function ContraMedia({ valor, destaque = false }: { valor: number; destaque?: boolean }) {
+  const acima = valor >= 0;
+  return (
+    <span
+      className={cn(
+        "tabular-nums",
+        destaque && "shrink-0 text-sm font-medium",
+        acima ? "text-[oklch(0.55_0.13_165)]" : "text-[oklch(0.55_0.15_25)]",
+      )}
+    >
+      {acima ? "+" : ""}
+      {Math.round(valor)}% vs. média
+    </span>
+  );
+}
+
+/**
+ * A grade de sete dias por oito faixas.
+ *
+ * Casas vazias continuam desenhadas: o olho compara linhas e colunas, e "nunca
+ * publicamos nesse horário" é informação, não ausência dela. A casa com poucas
+ * peças aparece com um tracejado — presente, mas visivelmente não conclusiva.
+ */
+function MapaDeCalor({ mapa }: { mapa: MapaDeHorarios }) {
+  const casa = (dia: number, bloco: number) =>
+    mapa.casas.find((item) => item.dia === dia && item.bloco === bloco);
+
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] border-separate border-spacing-1">
+          <thead>
+            <tr>
+              <th className="w-16" />
+              {BLOCOS.map((bloco) => (
+                <th
+                  key={bloco.indice}
+                  className="pb-1 text-[10px] font-medium tabular-nums text-muted-foreground"
+                >
+                  {bloco.rotulo}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {DIAS_CURTOS.map((dia, indiceDoDia) => (
+              <tr key={dia}>
+                <th className="pr-2 text-right text-[11px] font-medium text-muted-foreground">
+                  {dia}
+                </th>
+                {BLOCOS.map((bloco) => {
+                  const atual = casa(indiceDoDia, bloco.indice);
+                  const intensidade =
+                    atual && atual.confiavel && mapa.maiorAlcance > 0
+                      ? Math.min(atual.alcanceMedio / mapa.maiorAlcance, 1)
+                      : 0;
+
+                  return (
+                    <td key={bloco.indice}>
+                      <div
+                        title={
+                          atual && atual.pecas > 0
+                            ? `${dia}, ${bloco.rotulo}: ${formatCompact(atual.alcanceMedio)} de alcance médio em ${atual.pecas} ${atual.pecas === 1 ? "peça" : "peças"}${atual.confiavel ? "" : " — poucas para concluir"}`
+                            : `${dia}, ${bloco.rotulo}: nada publicado`
+                        }
+                        className={cn(
+                          "grid h-8 place-items-center rounded-md text-[10px] tabular-nums",
+                          !atual || atual.pecas === 0
+                            ? "border border-dashed border-border text-transparent"
+                            : atual.confiavel
+                              ? "text-foreground"
+                              : "border border-dashed border-border text-muted-foreground",
+                        )}
+                        style={
+                          atual && atual.confiavel
+                            ? {
+                                // Uma cor só, variando a opacidade: duas cores
+                                // dariam a impressão de duas categorias, e aqui
+                                // é uma grandeza contínua.
+                                background: `oklch(0.62 0.14 165 / ${0.12 + intensidade * 0.6})`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {atual && atual.pecas > 0 ? atual.pecas : "·"}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-2 text-xs text-muted-foreground">
+        O número é quantas peças saíram naquele horário; a cor é o alcance médio delas. Casa
+        tracejada tem peças de menos para virar conclusão — e casa vazia significa que nunca se
+        publicou ali.
+      </p>
     </div>
   );
 }

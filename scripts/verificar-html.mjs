@@ -308,6 +308,29 @@ if ((await campoEmail.count()) === 0) {
     erros.push("o compromisso não ficou clicável na agenda");
   }
 
+  // --- Quando publicar ------------------------------------------------------
+  //
+  // O mapa de horários é a parte da análise que vira decisão de rotina; se ele
+  // não desenhar, a tela de conteúdo perde o que ela tem de mais acionável.
+  await pagina
+    .getByRole("link", { name: /^Conteúdo/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(3000);
+
+  const conteudo = await pagina.locator("body").innerText();
+  for (const [rotulo, marca] of [
+    ["a seção de quando publicar", /Quando publicar/i],
+    ["o ranking dos melhores horários", /Melhores horários/i],
+    ["o cruzamento com o dia da semana", /Cruzando com o dia da semana/i],
+    ["o recorte por tipo de conteúdo", /Por tipo de conteúdo/i],
+    ["a comparação com a média", /vs\. média/],
+    ["a legenda do mapa de calor", /a cor é o alcance médio/i],
+  ]) {
+    if (marca.test(conteudo)) console.log(`✓ ${rotulo}`);
+    else erros.push(`conteúdo: faltou ${rotulo}`);
+  }
+
   // --- Números onde a pessoa olha ------------------------------------------
   //
   // O que já foi ao ar precisa mostrar como foi no mesmo lugar em que aparece.

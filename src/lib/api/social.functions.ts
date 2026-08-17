@@ -90,6 +90,12 @@ import {
   perfilDoPublico,
 } from "@/lib/social/publico";
 import { medirCobertura, montarMapa } from "@/lib/social/mapa";
+import {
+  horariosPorFormato,
+  mapaDeHorarios,
+  melhoresBlocos,
+  melhoresHorarios,
+} from "@/lib/social/horarios";
 import { conversasPorPeca, indexarOrigens, resumirPeca } from "@/lib/social/rastreio";
 import {
   chaveDoDia,
@@ -2964,6 +2970,15 @@ export const analisarConteudo = createServerFn({ method: "POST" })
       porDiaDaSemana: porDiaDaSemana(pecas),
       porFaixaDeHorario: porFaixaDeHorario(pecas),
       destaques: destaques(pecas),
+      // Quando publicar: o mapa dia × faixa, o ranking geral e o mesmo recorte
+      // por tipo de conteúdo. Calculado aqui, junto do resto da análise, porque
+      // depende exatamente das mesmas peças já avaliadas.
+      horarios: {
+        mapa: mapaDeHorarios(pecas),
+        melhoresCasas: melhoresHorarios(pecas),
+        melhoresBlocos: melhoresBlocos(pecas),
+        porFormato: horariosPorFormato(pecas),
+      },
       contas,
     };
   });
