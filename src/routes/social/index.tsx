@@ -163,9 +163,14 @@ function PainelPage() {
             />
           </div>
 
-          {quadro.data ? <GraficoDoQuadro dado={quadro.data} /> : null}
-
+          {/* O aviso de procedência vem antes do gráfico: quem lê um número
+              precisa saber de onde ele vem antes de interpretá-lo, não depois. */}
           <DeOndeVemOsNumeros redes={data.redes} seguidores={data.summary.followers} />
+
+          {/* E o gráfico fica colado em "Suas redes", nesta ordem de propósito:
+              primeiro quando e com o quê a campanha alcança gente, e logo em
+              seguida em que rede aquilo aterrissou. */}
+          {quadro.data ? <GraficoDoQuadro dado={quadro.data} /> : null}
 
           <SectionCard
             title="Suas redes"
