@@ -64,6 +64,7 @@ export type PecaAvaliada = {
 const DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
 
 export const NOME_DO_FORMATO: Record<PostFormat, string> = {
+  a_definir: "A definir",
   imagem: "Imagem",
   carrossel: "Carrossel",
   video: "Vídeo",

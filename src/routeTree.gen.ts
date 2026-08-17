@@ -17,6 +17,7 @@ import { Route as SocialRelatoriosRouteImport } from './routes/social/relatorios
 import { Route as SocialRelacionamentoRouteImport } from './routes/social/relacionamento'
 import { Route as SocialPublicoRouteImport } from './routes/social/publico'
 import { Route as SocialPublicacoesRouteImport } from './routes/social/publicacoes'
+import { Route as SocialPerfilRouteImport } from './routes/social/perfil'
 import { Route as SocialMapaRouteImport } from './routes/social/mapa'
 import { Route as SocialImpulsionamentosRouteImport } from './routes/social/impulsionamentos'
 import { Route as SocialImportarRouteImport } from './routes/social/importar'
@@ -30,6 +31,7 @@ import { Route as RelatorioTokenRouteImport } from './routes/relatorio.$token'
 import { Route as OauthRetornoRouteImport } from './routes/oauth.retorno'
 import { Route as SocialRedeNetworkIdRouteImport } from './routes/social/rede.$networkId'
 import { Route as SocialPublicacaoPostIdRouteImport } from './routes/social/publicacao.$postId'
+import { Route as SocialEventoEventoIdRouteImport } from './routes/social/evento.$eventoId'
 import { Route as SocialContaAccountIdRouteImport } from './routes/social/conta.$accountId'
 
 const SocialRoute = SocialRouteImport.update({
@@ -70,6 +72,11 @@ const SocialPublicoRoute = SocialPublicoRouteImport.update({
 const SocialPublicacoesRoute = SocialPublicacoesRouteImport.update({
   id: '/publicacoes',
   path: '/publicacoes',
+  getParentRoute: () => SocialRoute,
+} as any)
+const SocialPerfilRoute = SocialPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
   getParentRoute: () => SocialRoute,
 } as any)
 const SocialMapaRoute = SocialMapaRouteImport.update({
@@ -137,6 +144,11 @@ const SocialPublicacaoPostIdRoute = SocialPublicacaoPostIdRouteImport.update({
   path: '/publicacao/$postId',
   getParentRoute: () => SocialRoute,
 } as any)
+const SocialEventoEventoIdRoute = SocialEventoEventoIdRouteImport.update({
+  id: '/evento/$eventoId',
+  path: '/evento/$eventoId',
+  getParentRoute: () => SocialRoute,
+} as any)
 const SocialContaAccountIdRoute = SocialContaAccountIdRouteImport.update({
   id: '/conta/$accountId',
   path: '/conta/$accountId',
@@ -157,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/mapa': typeof SocialMapaRoute
+  '/social/perfil': typeof SocialPerfilRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
   '/social/publico': typeof SocialPublicoRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
@@ -164,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/social/entrar': typeof SocialEntrarRoute
   '/social/': typeof SocialIndexRoute
   '/social/conta/$accountId': typeof SocialContaAccountIdRoute
+  '/social/evento/$eventoId': typeof SocialEventoEventoIdRoute
   '/social/publicacao/$postId': typeof SocialPublicacaoPostIdRoute
   '/social/rede/$networkId': typeof SocialRedeNetworkIdRoute
 }
@@ -180,6 +194,7 @@ export interface FileRoutesByTo {
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/mapa': typeof SocialMapaRoute
+  '/social/perfil': typeof SocialPerfilRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
   '/social/publico': typeof SocialPublicoRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
@@ -187,6 +202,7 @@ export interface FileRoutesByTo {
   '/social/entrar': typeof SocialEntrarRoute
   '/social': typeof SocialIndexRoute
   '/social/conta/$accountId': typeof SocialContaAccountIdRoute
+  '/social/evento/$eventoId': typeof SocialEventoEventoIdRoute
   '/social/publicacao/$postId': typeof SocialPublicacaoPostIdRoute
   '/social/rede/$networkId': typeof SocialRedeNetworkIdRoute
 }
@@ -205,6 +221,7 @@ export interface FileRoutesById {
   '/social/importar': typeof SocialImportarRoute
   '/social/impulsionamentos': typeof SocialImpulsionamentosRoute
   '/social/mapa': typeof SocialMapaRoute
+  '/social/perfil': typeof SocialPerfilRoute
   '/social/publicacoes': typeof SocialPublicacoesRoute
   '/social/publico': typeof SocialPublicoRoute
   '/social/relacionamento': typeof SocialRelacionamentoRoute
@@ -212,6 +229,7 @@ export interface FileRoutesById {
   '/social_/entrar': typeof SocialEntrarRoute
   '/social/': typeof SocialIndexRoute
   '/social/conta/$accountId': typeof SocialContaAccountIdRoute
+  '/social/evento/$eventoId': typeof SocialEventoEventoIdRoute
   '/social/publicacao/$postId': typeof SocialPublicacaoPostIdRoute
   '/social/rede/$networkId': typeof SocialRedeNetworkIdRoute
 }
@@ -231,6 +249,7 @@ export interface FileRouteTypes {
     | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/mapa'
+    | '/social/perfil'
     | '/social/publicacoes'
     | '/social/publico'
     | '/social/relacionamento'
@@ -238,6 +257,7 @@ export interface FileRouteTypes {
     | '/social/entrar'
     | '/social/'
     | '/social/conta/$accountId'
+    | '/social/evento/$eventoId'
     | '/social/publicacao/$postId'
     | '/social/rede/$networkId'
   fileRoutesByTo: FileRoutesByTo
@@ -254,6 +274,7 @@ export interface FileRouteTypes {
     | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/mapa'
+    | '/social/perfil'
     | '/social/publicacoes'
     | '/social/publico'
     | '/social/relacionamento'
@@ -261,6 +282,7 @@ export interface FileRouteTypes {
     | '/social/entrar'
     | '/social'
     | '/social/conta/$accountId'
+    | '/social/evento/$eventoId'
     | '/social/publicacao/$postId'
     | '/social/rede/$networkId'
   id:
@@ -278,6 +300,7 @@ export interface FileRouteTypes {
     | '/social/importar'
     | '/social/impulsionamentos'
     | '/social/mapa'
+    | '/social/perfil'
     | '/social/publicacoes'
     | '/social/publico'
     | '/social/relacionamento'
@@ -285,6 +308,7 @@ export interface FileRouteTypes {
     | '/social_/entrar'
     | '/social/'
     | '/social/conta/$accountId'
+    | '/social/evento/$eventoId'
     | '/social/publicacao/$postId'
     | '/social/rede/$networkId'
   fileRoutesById: FileRoutesById
@@ -353,6 +377,13 @@ declare module '@tanstack/react-router' {
       path: '/publicacoes'
       fullPath: '/social/publicacoes'
       preLoaderRoute: typeof SocialPublicacoesRouteImport
+      parentRoute: typeof SocialRoute
+    }
+    '/social/perfil': {
+      id: '/social/perfil'
+      path: '/perfil'
+      fullPath: '/social/perfil'
+      preLoaderRoute: typeof SocialPerfilRouteImport
       parentRoute: typeof SocialRoute
     }
     '/social/mapa': {
@@ -446,6 +477,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SocialPublicacaoPostIdRouteImport
       parentRoute: typeof SocialRoute
     }
+    '/social/evento/$eventoId': {
+      id: '/social/evento/$eventoId'
+      path: '/evento/$eventoId'
+      fullPath: '/social/evento/$eventoId'
+      preLoaderRoute: typeof SocialEventoEventoIdRouteImport
+      parentRoute: typeof SocialRoute
+    }
     '/social/conta/$accountId': {
       id: '/social/conta/$accountId'
       path: '/conta/$accountId'
@@ -466,12 +504,14 @@ interface SocialRouteChildren {
   SocialImportarRoute: typeof SocialImportarRoute
   SocialImpulsionamentosRoute: typeof SocialImpulsionamentosRoute
   SocialMapaRoute: typeof SocialMapaRoute
+  SocialPerfilRoute: typeof SocialPerfilRoute
   SocialPublicacoesRoute: typeof SocialPublicacoesRoute
   SocialPublicoRoute: typeof SocialPublicoRoute
   SocialRelacionamentoRoute: typeof SocialRelacionamentoRoute
   SocialRelatoriosRoute: typeof SocialRelatoriosRoute
   SocialIndexRoute: typeof SocialIndexRoute
   SocialContaAccountIdRoute: typeof SocialContaAccountIdRoute
+  SocialEventoEventoIdRoute: typeof SocialEventoEventoIdRoute
   SocialPublicacaoPostIdRoute: typeof SocialPublicacaoPostIdRoute
   SocialRedeNetworkIdRoute: typeof SocialRedeNetworkIdRoute
 }
@@ -486,12 +526,14 @@ const SocialRouteChildren: SocialRouteChildren = {
   SocialImportarRoute: SocialImportarRoute,
   SocialImpulsionamentosRoute: SocialImpulsionamentosRoute,
   SocialMapaRoute: SocialMapaRoute,
+  SocialPerfilRoute: SocialPerfilRoute,
   SocialPublicacoesRoute: SocialPublicacoesRoute,
   SocialPublicoRoute: SocialPublicoRoute,
   SocialRelacionamentoRoute: SocialRelacionamentoRoute,
   SocialRelatoriosRoute: SocialRelatoriosRoute,
   SocialIndexRoute: SocialIndexRoute,
   SocialContaAccountIdRoute: SocialContaAccountIdRoute,
+  SocialEventoEventoIdRoute: SocialEventoEventoIdRoute,
   SocialPublicacaoPostIdRoute: SocialPublicacaoPostIdRoute,
   SocialRedeNetworkIdRoute: SocialRedeNetworkIdRoute,
 }

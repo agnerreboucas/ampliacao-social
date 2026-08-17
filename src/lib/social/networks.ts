@@ -1,4 +1,4 @@
-import type { NetworkId, PostFormat, PostMedia, SocialAccount } from "./types";
+import type { FormatoPublicavel, NetworkId, PostFormat, PostMedia, SocialAccount } from "./types";
 
 /**
  * Capacidades e limites de cada rede. A plataforma valida o conteúdo contra
@@ -30,6 +30,22 @@ export type NetworkCapabilities = {
   supportsAudienceInsights: boolean;
   /** Fase do roadmap em que a rede entra (PRD 7). */
   phase: 1 | 4;
+};
+
+/**
+ * A mídia com que cada formato nasce.
+ *
+ * Não é palpite estético: é o que passa na validação da maioria das redes sem
+ * ajuste nenhum. Serve a dois lugares — o editor, quando alguém troca o formato
+ * no meio da escrita, e o servidor, quando uma pauta da agenda finalmente
+ * decide o que vai ser. Os dois precisam concordar, senão a mesma escolha
+ * produz peças diferentes dependendo de onde foi feita.
+ */
+export const MIDIA_PADRAO: Record<FormatoPublicavel, PostMedia> = {
+  imagem: { count: 1, aspectRatio: "4:5", fileSizeMb: 2 },
+  carrossel: { count: 3, aspectRatio: "4:5", fileSizeMb: 4.5 },
+  video: { count: 1, aspectRatio: "9:16", fileSizeMb: 45, durationSeconds: 30 },
+  story: { count: 1, aspectRatio: "9:16", fileSizeMb: 2.5 },
 };
 
 export const NETWORKS: Record<NetworkId, NetworkCapabilities> = {

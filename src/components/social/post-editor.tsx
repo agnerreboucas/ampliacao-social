@@ -21,23 +21,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { NETWORKS } from "@/lib/social/networks";
-import type { PostFormat, PostMedia, SocialAccount } from "@/lib/social/types";
+import { MIDIA_PADRAO, NETWORKS } from "@/lib/social/networks";
+import type { FormatoPublicavel, PostMedia, SocialAccount } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
-const FORMAT_OPTIONS: { id: PostFormat; label: string; icon: typeof ImageIcon; hint: string }[] = [
+const FORMAT_OPTIONS: {
+  id: FormatoPublicavel;
+  label: string;
+  icon: typeof ImageIcon;
+  hint: string;
+}[] = [
   { id: "imagem", label: "Imagem única", icon: ImageIcon, hint: "1 arquivo" },
   { id: "carrossel", label: "Carrossel", icon: Images, hint: "2 a 10 imagens" },
   { id: "video", label: "Vídeo", icon: Video, hint: "Reels ou feed" },
   { id: "story", label: "Story", icon: CirclePlay, hint: "9:16, sai do ar em 24h" },
 ];
-
-const DEFAULT_MEDIA: Record<PostFormat, PostMedia> = {
-  imagem: { count: 1, aspectRatio: "4:5", fileSizeMb: 2 },
-  carrossel: { count: 3, aspectRatio: "4:5", fileSizeMb: 4.5 },
-  video: { count: 1, aspectRatio: "9:16", fileSizeMb: 45, durationSeconds: 30 },
-  story: { count: 1, aspectRatio: "9:16", fileSizeMb: 2.5 },
-};
 
 const ASPECT_OPTIONS: PostMedia["aspectRatio"][] = ["1:1", "4:5", "9:16", "16:9"];
 
@@ -56,9 +54,9 @@ export function PostEditorDialog({
   userId: string;
   onCreated: () => void;
 }) {
-  const [format, setFormat] = useState<PostFormat>("imagem");
+  const [format, setFormat] = useState<FormatoPublicavel>("imagem");
   const [caption, setCaption] = useState("");
-  const [media, setMedia] = useState<PostMedia>(DEFAULT_MEDIA.imagem);
+  const [media, setMedia] = useState<PostMedia>(MIDIA_PADRAO.imagem);
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [requiresApproval, setRequiresApproval] = useState(true);
   const [scheduledFor, setScheduledFor] = useState("");
@@ -119,15 +117,15 @@ export function PostEditorDialog({
   function reset() {
     setFormat("imagem");
     setCaption("");
-    setMedia(DEFAULT_MEDIA.imagem);
+    setMedia(MIDIA_PADRAO.imagem);
     setAccountIds([]);
     setScheduledFor("");
     setErro(null);
   }
 
-  function changeFormat(next: PostFormat) {
+  function changeFormat(next: FormatoPublicavel) {
     setFormat(next);
-    setMedia(DEFAULT_MEDIA[next]);
+    setMedia(MIDIA_PADRAO[next]);
   }
 
   const issues = validacao.data?.issues ?? [];

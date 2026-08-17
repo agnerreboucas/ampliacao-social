@@ -172,15 +172,29 @@ export type AudienceInsight = {
 };
 
 /**
- * Os formatos que a plataforma acompanha.
+ * O que a peça é, quando alguém a vê na rede.
  *
- * `story` é diferente dos outros três em duas coisas que aparecem em toda
- * análise: ele expira em 24 horas, e a rede não devolve curtidas nem
- * salvamentos para ele — devolve respostas, toques e saídas. Comparar a taxa de
- * um story com a de um post de feed sem dizer isso faz o story parecer o pior
- * formato da conta quando ele pode ser o melhor.
+ * `story` é diferente dos outros em duas coisas que aparecem em toda análise:
+ * ele expira em 24 horas, e a rede não devolve curtidas nem salvamentos para
+ * ele — devolve respostas, toques e saídas. Comparar a taxa de um story com a
+ * de um post de feed sem dizer isso faz o story parecer o pior formato da conta
+ * quando ele pode ser o melhor.
+ *
+ * `a_definir` é o estado de uma pauta que ainda não virou nada. Existe porque a
+ * ideia nasce antes da decisão de formato — sobretudo a que nasce da agenda,
+ * onde o que se sabe é "sábado tem caminhada", e só depois alguém decide se
+ * aquilo vira carrossel, reels ou stories. Sem este valor, a plataforma teria de
+ * chutar um formato na criação, e o chute ficaria lá como se fosse escolha.
+ *
+ * Nenhuma rede aceita publicar `a_definir`: a validação recusa, e é isso que
+ * força a decisão antes de a peça sair.
  */
-export type PostFormat = "imagem" | "carrossel" | "video" | "story";
+export type PostFormat = "a_definir" | "imagem" | "carrossel" | "video" | "story";
+
+/** O que dá para de fato publicar: tudo menos a pauta que ainda não decidiu. */
+export type FormatoPublicavel = Exclude<PostFormat, "a_definir">;
+
+export const FORMATOS_PUBLICAVEIS: FormatoPublicavel[] = ["imagem", "carrossel", "video", "story"];
 
 /** Formatos cujas métricas de interação são comparáveis entre si. */
 export const FORMATOS_DE_FEED: PostFormat[] = ["imagem", "carrossel", "video"];
@@ -275,6 +289,14 @@ export type Post = {
   projectId: string;
   /** Quando esta publicação nasceu de um repost, aponta para a original. */
   republicadoDe?: string;
+  /**
+   * O compromisso da agenda que deu origem a esta peça.
+   *
+   * É o que faz a ideia aparecer no quadro marcada como "da agenda" e o que
+   * impede a mesma pauta de ser criada duas vezes quando o calendário é
+   * reimportado.
+   */
+  origemEventoId?: string;
   accountIds: string[];
   format: PostFormat;
   caption: string;
@@ -383,6 +405,18 @@ export type PlatformUser = {
   projectIds: string[];
   lastActiveAt: string; // ISO datetime
   avatarGradient: string;
+  /**
+   * A frente em que a pessoa atua: "cobertura de eventos", "atendimento",
+   * "produção de vídeo".
+   *
+   * Não é o papel. Papel é o que a plataforma deixa fazer; frente é o que a
+   * pessoa faz na campanha. Duas editoras com o mesmo papel podem estar em
+   * frentes diferentes, e é a frente que responde "quem estava na caminhada?"
+   * quando alguém olha a agenda três semanas depois.
+   */
+  area?: string;
+  /** Telefone de contato, para quem coordena a cobertura em campo. */
+  telefone?: string;
 };
 
 export type Report = {

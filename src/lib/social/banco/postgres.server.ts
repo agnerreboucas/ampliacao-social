@@ -125,8 +125,23 @@ export async function encerrarPool(): Promise<void> {
 export async function carregarDoBanco(
   pool: pg.Pool = obterPool(),
 ): Promise<EstadoPersistivel | null> {
+  /**
+   * "Banco vazio" quer dizer **instalação que ainda não existe**, e isso se mede
+   * pelos usuários.
+   *
+   * Antes a pergunta era feita à tabela de contas de rede social, e o efeito era
+   * silencioso e destrutivo: uma instalação nova legítima — projeto criado,
+   * administrador criado, senha definida — não tem conta de rede nenhuma até
+   * alguém conectar a primeira. Toda subida concluía "vazio", regravava o estado
+   * de estreia por cima e **zerava o hash da senha**. Ninguém conseguia entrar, e
+   * o log não acusava nada de errado.
+   *
+   * Usuário é o registro que nasce junto com a instalação e nunca some.
+   */
+  const instalacao = await pool.query("select 1 from usuarios limit 1");
+  if (instalacao.rowCount === 0) return null;
+
   const contas = await pool.query("select * from contas order by ordem, id");
-  if (contas.rowCount === 0) return null;
 
   const [
     projetos,
@@ -378,6 +393,8 @@ const COLUNAS = {
     "avatar_gradiente",
     "ordem",
     "senha_hash",
+    "area",
+    "telefone",
   ],
   contas: [
     "id",
@@ -412,6 +429,7 @@ const COLUNAS = {
     "motivo_falha",
     "metricas",
     "capa_gradiente",
+    "origem_evento_id",
   ],
   impulsionamentos: [
     "id",

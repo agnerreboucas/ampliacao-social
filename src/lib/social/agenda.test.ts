@@ -3,10 +3,14 @@ import { test } from "node:test";
 
 import {
   chaveDoDia,
+  eventosSemPauta,
   gradeDoMes,
   horaDoItem,
   itensDoDia,
   montarQuadro,
+  motivoParaNaoAvancar,
+  pautaDoEvento,
+  pautasDoEvento,
   podeMoverPara,
   resumirDia,
   semanaDe,
@@ -296,4 +300,76 @@ test("a semana vai de domingo a sábado", () => {
   assert.equal(semana.length, 7);
   assert.equal(semana[0], "2026-08-09");
   assert.equal(semana[6], "2026-08-15");
+});
+
+// --- Da agenda para a pauta --------------------------------------------------
+
+test("evento sem pauta é o que ainda vira conteúdo", () => {
+  const caminhada = evento({ id: "ev-1" });
+  const reuniao = evento({ id: "ev-2" });
+  const jaVirou = post({ origemEventoId: "ev-1" });
+
+  assert.deepEqual(
+    eventosSemPauta([caminhada, reuniao], [jaVirou]).map((e) => e.id),
+    ["ev-2"],
+  );
+});
+
+test("reimportar a mesma agenda não gera a pauta de novo", () => {
+  // O Google exporta o calendário inteiro toda vez. Sem esta checagem, a
+  // segunda importação dobraria a coluna de ideias — e a terceira triplicaria.
+  const eventos = [evento({ id: "ev-1" }), evento({ id: "ev-2" })];
+  const pautas = eventos.map((e) => post({ origemEventoId: e.id, status: "ideia" }));
+
+  assert.deepEqual(eventosSemPauta(eventos, pautas), []);
+});
+
+test("as pautas de um evento são só as dele", () => {
+  const caminhada = evento({ id: "ev-1" });
+  const minhas = [post({ origemEventoId: "ev-1" }), post({ origemEventoId: "ev-1" })];
+  const alheia = post({ origemEventoId: "ev-9" });
+  const solta = post();
+
+  assert.equal(pautasDoEvento(caminhada, [...minhas, alheia, solta]).length, 2);
+});
+
+test("a pauta diz de que compromisso saiu", () => {
+  // Sem data e lugar, "Caminhada" no meio de trinta pautas não diz qual.
+  const texto = pautaDoEvento(
+    evento({ titulo: "Caminhada na feira", comecaEm: "2026-08-15T09:30:00" }),
+  );
+
+  assert.match(texto, /Caminhada na feira/);
+  assert.match(texto, /15\/08/);
+  assert.match(texto, /09h30/);
+  assert.match(texto, /Feira da Vila Nova/);
+});
+
+test("evento de dia inteiro não inventa horário", () => {
+  const texto = pautaDoEvento(evento({ diaInteiro: true, comecaEm: "2026-08-15T00:00:00" }));
+
+  assert.match(texto, /dia inteiro/);
+  assert.doesNotMatch(texto, /00h00/);
+});
+
+test("pauta sem formato não avança para produção", () => {
+  // O modo de falha: a peça chegaria agendada e a rede recusaria na hora de
+  // publicar — que é o pior momento para descobrir que ninguém decidiu o
+  // formato.
+  const pauta = post({ format: "a_definir", status: "ideia" });
+
+  assert.match(motivoParaNaoAvancar(pauta, "aprovado") ?? "", /Escolha o formato/);
+  assert.match(motivoParaNaoAvancar(pauta, "agendado") ?? "", /Escolha o formato/);
+  assert.match(motivoParaNaoAvancar(pauta, "publicado") ?? "", /Escolha o formato/);
+});
+
+test("pauta sem formato pode virar rascunho — é onde se decide", () => {
+  const pauta = post({ format: "a_definir", status: "ideia" });
+
+  assert.equal(motivoParaNaoAvancar(pauta, "rascunho"), null);
+  assert.equal(motivoParaNaoAvancar(pauta, "ideia"), null);
+});
+
+test("com formato escolhido, nada trava", () => {
+  assert.equal(motivoParaNaoAvancar(post({ format: "carrossel" }), "agendado"), null);
 });

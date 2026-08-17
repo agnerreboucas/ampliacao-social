@@ -26,15 +26,28 @@ Fly, App Runner, ou uma máquina na infraestrutura da agência.
 ## Gerar o pacote
 
 ```bash
-NITRO_PRESET=node-server npm run build
+npm run build
+npm start
 ```
 
-Sem a variável, o build continua como sempre foi — o fluxo do Lovable não muda.
-Com ela, sai `dist/` com o servidor e os arquivos estáticos:
+O build sai em **`.output`** — `.output/server/index.mjs` é o servidor e
+`.output/client` são os arquivos do navegador. É a convenção do nitro, que é
+onde toda hospedagem procura.
 
-```bash
-node dist/server/index.mjs
-```
+Duas coisas acontecem aí, e vale saber por quê:
+
+**O alvo padrão fora do sandbox do Lovable é `node-server`.** O plugin do nitro
+só liga sozinho quando reconhece aquele ambiente; em qualquer outro lugar um
+`npm run build` cru terminava com sucesso e não gerava servidor nenhum — só um
+aviso no meio do log e uma implantação que não achava o que publicar. Dentro do
+sandbox nada muda: o fluxo de lá continua publicando de `dist`.
+
+**`scripts/preparar-saida.mjs` move o build de `dist` para `.output`** depois do
+`vite build`. O vite escreve em `dist` e o bundle do servidor referencia os
+arquivos do navegador por caminho relativo, então a pasta é movida inteira, com
+os nomes preservados.
+
+`NITRO_PRESET` continua valendo para quem quiser outro alvo.
 
 ## Variáveis de ambiente
 
@@ -42,10 +55,26 @@ node dist/server/index.mjs
 | ----------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                        | sim           | Endereço do Postgres. Sem ela a plataforma sobe em modo demonstração, com dados semeados.     |
 | `SESSION_SECRET`                                      | sim           | Chave que sela o cookie de sessão. Mínimo de 32 caracteres.                                   |
+| `ADMIN_EMAIL`                                         | sim           | Quem vira o primeiro administrador numa instalação nova.                                      |
+| `NODE_ENV`                                            | sim           | `production`. É o que liga a conferência de subida e o cookie seguro.                         |
+| `ADMIN_NOME`                                          | não           | Nome desse administrador. Sem ela, a parte do e-mail antes do @.                              |
+| `PROJETO_INICIAL`                                     | não           | Nome do primeiro projeto. Padrão: "Campanha".                                                 |
 | `PORT`                                                | não           | Porta onde escutar. Padrão 3000.                                                              |
 | `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI` | não           | Conexão com Instagram e Facebook. Sem elas, a tela de conexão avisa que não está configurada. |
 | `WINDSOR_API_KEY`                                     | não           | Números de mídia paga pelo Windsor.ai.                                                        |
-| `CREDENCIAIS_CHAVE`                                   | se usar OAuth | Cifra os tokens das redes guardados no banco.                                                 |
+| `SOCIAL_CRYPTO_KEY`                                   | se usar OAuth | Cifra os tokens das redes guardados no banco. `openssl rand -base64 32`.                      |
+
+### A subida é interrompida se faltar o obrigatório
+
+Com `NODE_ENV=production`, a aplicação **não atende requisição nenhuma** sem
+`DATABASE_URL`, `ADMIN_EMAIL` e um `SESSION_SECRET` de pelo menos 32 caracteres.
+O log diz qual variável falta, por que ela importa e como gerar o valor.
+
+Derrubar em vez de avisar é deliberado: **sem banco a plataforma entra em modo
+demonstração, e em demonstração qualquer senha entra.** Num arquivo que se manda
+por mensagem isso é correto; num endereço público é catastrófico — quem
+descobrir a URL entra como administrador da campanha. Um aviso no log de uma
+hospedagem é um aviso que ninguém lê.
 
 Gerar a chave de sessão:
 
@@ -69,7 +98,7 @@ Para conferir a build de produção **na própria máquina**, onde não há
 certificado, existe uma saída explícita:
 
 ```bash
-SESSAO_SEM_TLS=sim NODE_ENV=production node dist/server/index.mjs
+SESSAO_SEM_TLS=sim NODE_ENV=production npm start
 ```
 
 Ela imprime um aviso no log a cada requisição de sessão. Não use em servidor
@@ -113,17 +142,50 @@ leituras diárias de uma campanha não se recupera digitando de novo.
 
 1. Criar o banco e anotar o `DATABASE_URL`.
 2. Gerar o `SESSION_SECRET`.
-3. Subir com as duas variáveis. O esquema é criado e a semente entra.
+3. Subir com as variáveis obrigatórias. O esquema é criado sozinho.
 4. Definir a senha do primeiro administrador:
    ```bash
-   DATABASE_URL=... npm run senha -- pessoa@exemplo.com.br
+   DATABASE_URL=... ADMIN_NOME="Nome de quem administra" \
+   PROJETO_INICIAL="Campanha do cliente" \
+     npm run senha -- pessoa@exemplo.com.br
    ```
-   O comando pede a senha duas vezes e nunca a guarda em lugar nenhum além do
-   hash.
+   Com o banco vazio, este comando **cria a instalação**: um projeto e um
+   administrador, e mais nada. Depois pede a senha duas vezes, e nunca a guarda
+   em lugar nenhum além do hash.
 5. Reiniciar, para a aplicação reler o banco.
-6. Entrar, criar o projeto do cliente e cadastrar as contas dele.
+6. Entrar, conferir o projeto e cadastrar as contas do cliente.
 7. Importar o histórico pela tela de Importar histórico.
 8. Ligar o backup do banco.
+
+**Produção não recebe a semente de demonstração.** A semente tem três projetos
+fictícios e cinco pessoas que não existem; gravá-la no banco de um cliente real
+seria entregar a plataforma com dados de mentira dentro, para alguém apagar um
+por um no dia em que a pressa é maior. Instalação nova nasce com um projeto e um
+administrador — só isso.
+
+## Hostinger, passo a passo
+
+A Hostinger publica direto do GitHub. O que ela precisa saber:
+
+| Campo             | Valor                     |
+| ----------------- | ------------------------- |
+| Comando de build  | `npm ci && npm run build` |
+| Pasta de saída    | `.output`                 |
+| Comando de início | `npm start`               |
+| Versão do Node    | 20 ou mais nova           |
+| Health check      | `/api/saude`              |
+
+As variáveis de ambiente vão no painel da hospedagem, **nunca no repositório**.
+No mínimo: `NODE_ENV=production`, `DATABASE_URL`, `SESSION_SECRET`,
+`ADMIN_EMAIL`.
+
+Depois da primeira publicação, rode o `npm run senha` **com o mesmo
+`DATABASE_URL`** — do terminal da Hostinger ou da sua máquina, tanto faz, porque
+o comando fala com o banco e não com a aplicação. Reinicie e entre.
+
+Se a implantação falhar dizendo que não achou a pasta de saída, confira se o
+comando de build é o `npm run build` deste repositório: é ele que gera o
+`.output`.
 
 ## Contêiner
 
@@ -133,7 +195,10 @@ Compose no servidor da agência:
 
 ```bash
 docker build -t ampliacao-social .
-docker run -p 3000:3000 -e DATABASE_URL=... -e SESSION_SECRET=... ampliacao-social
+docker run -p 3000:3000 \
+  -e NODE_ENV=production -e DATABASE_URL=... \
+  -e SESSION_SECRET=... -e ADMIN_EMAIL=... \
+  ampliacao-social
 ```
 
 A imagem final leva só o pacote gerado e o driver do Postgres; TypeScript,

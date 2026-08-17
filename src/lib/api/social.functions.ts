@@ -23,6 +23,7 @@ import {
   lerDescoberta,
 } from "@/lib/social/credenciais.server";
 import {
+  MIDIA_PADRAO,
   NETWORKS,
   NETWORK_IDS,
   hasBlockingIssues,
@@ -90,9 +91,16 @@ import {
 } from "@/lib/social/publico";
 import { medirCobertura, montarMapa } from "@/lib/social/mapa";
 import { conversasPorPeca, indexarOrigens, resumirPeca } from "@/lib/social/rastreio";
-import { chaveDoDia, podeMoverPara, resumirDia } from "@/lib/social/agenda";
+import {
+  chaveDoDia,
+  eventosSemPauta,
+  motivoParaNaoAvancar,
+  pautaDoEvento,
+  podeMoverPara,
+  resumirDia,
+} from "@/lib/social/agenda";
 import { lerIcs, planejarImportacao } from "@/lib/social/ics";
-import { acharMunicipio } from "@/lib/social/municipios-sp";
+import { MUNICIPIOS_SP, acharMunicipio } from "@/lib/social/municipios-sp";
 import { gerarRelatorioPdf } from "@/lib/social/pdf/relatorio";
 import { paraBase64 } from "@/lib/social/pdf/documento";
 import { buscarMidiaPaga, explicarErroWindsor } from "@/lib/social/windsor/cliente.server";
@@ -134,6 +142,7 @@ import type {
   PlatformUser,
   Post,
   PostFormat,
+  PostMedia,
   SocialAccount,
 } from "@/lib/social/types";
 
@@ -343,6 +352,86 @@ export const sair = createServerFn({ method: "POST" }).handler(async () => {
  * navegador com o valor certo escrito à mão "estava logado"; agora a resposta
  * vem de um cookie que só o servidor sabe assinar.
  */
+/**
+ * A área da pessoa: quem ela é aqui dentro, e o que ela já fez.
+ *
+ * Junta três coisas que estavam espalhadas — o cadastro, os projetos e o
+ * histórico de uso — porque a pergunta "quem sou eu nesta plataforma?" não se
+ * responde com o cadastro sozinho. O que a pessoa **pode fazer** é derivado do
+ * papel, e vem daqui em vez de ser remontado na tela: a regra tem de ser a
+ * mesma que o servidor aplica, senão a tela promete o que a chamada recusa.
+ */
+export const meuPerfil = createServerFn({ method: "POST" }).handler(async () => {
+  const usuario = await exigirUsuario();
+  const db = getDb();
+
+  return {
+    usuario,
+    projetos: db.projects.filter((projeto) => usuario.projectIds.includes(projeto.id)),
+    /** As permissões do papel, na ordem em que fazem sentido para quem lê. */
+    permissoes: PERMISSOES_EXPLICADAS.filter((item) => can(usuario.role, item.id)),
+    negadas: PERMISSOES_EXPLICADAS.filter((item) => !can(usuario.role, item.id)),
+    // As últimas coisas que a pessoa fez. É a parte da tela que serve para
+    // conferir "fui eu que mexi nisso?" sem pedir nada a ninguém.
+    atividade: await consultar({ usuarioId: usuario.id, limite: 12 }),
+  };
+});
+
+/**
+ * O que cada permissão significa em português.
+ *
+ * Mostrar `publicar_direto` na tela não informa ninguém. A frase explica o que
+ * muda na prática — e é ela que faz alguém entender por que um botão não
+ * aparece, em vez de achar que a plataforma está com defeito.
+ */
+const PERMISSOES_EXPLICADAS: { id: string; rotulo: string; explica: string }[] = [
+  { id: "metricas", rotulo: "Ver números", explica: "Painel, contas, público e mapa." },
+  { id: "publicar", rotulo: "Criar conteúdo", explica: "Escrever peças e mandar para aprovação." },
+  {
+    id: "publicar_direto",
+    rotulo: "Publicar sem aprovação",
+    explica: "Manda para a rede na hora — é o que permite cobrir evento ao vivo.",
+  },
+  { id: "aprovar", rotulo: "Aprovar peças", explica: "Liberar o que outra pessoa escreveu." },
+  { id: "impulsionar", rotulo: "Impulsionar", explica: "Criar e acompanhar campanhas pagas." },
+  { id: "inbox", rotulo: "Responder pessoas", explica: "Comentários e mensagens diretas." },
+  { id: "relatorios", rotulo: "Gerar relatórios", explica: "Montar e compartilhar o PDF." },
+  {
+    id: "agenda",
+    rotulo: "Mexer na agenda",
+    explica: "Compromissos, quadro de produção e pautas.",
+  },
+  { id: "admin", rotulo: "Administrar", explica: "Equipe, papéis e histórico de uso de todos." },
+];
+
+/**
+ * A pessoa edita o próprio cadastro — e só o próprio.
+ *
+ * Papel fica de fora de propósito: quem muda papel é administrador, pela tela
+ * de Equipe. Um campo de papel aqui seria alguém se promovendo a administrador
+ * no próprio perfil, que é a falha de autorização mais banal que existe.
+ */
+export const atualizarMeuPerfil = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      nome: z.string().min(1).max(120),
+      area: z.string().max(120),
+      telefone: z.string().max(40),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const usuario = await exigirUsuario();
+
+    usuario.name = data.nome.trim();
+    usuario.area = data.area.trim() || undefined;
+    usuario.telefone = data.telefone.trim() || undefined;
+
+    anotarDe(usuario, { acao: "perfil_editado", alvoRotulo: usuario.name });
+    await persistir();
+
+    return { ok: true as const, usuario };
+  });
+
 export const sessaoAtual = createServerFn({ method: "POST" }).handler(async () => {
   const usuario = await usuarioAtual();
   if (!usuario) return { autenticado: false as const };
@@ -3127,6 +3216,64 @@ export const detalharMunicipio = createServerFn({ method: "POST" })
 // ---------------------------------------------------------------------------
 
 /**
+ * Quem enxerga a peça.
+ *
+ * A regra normal é por conta de rede: quem não pode ver o Instagram da campanha
+ * não vê o que sai nele. A pauta recém-nascida da agenda ainda não escolheu
+ * canal nenhum, e por isso cairia fora de todo filtro — sumindo justamente da
+ * tela onde alguém precisa decidir o que ela vai ser. Sem conta, a permissão
+ * que vale é a do projeto.
+ */
+function vePeca(post: Post, idsDeConta: Set<string>, projetos: string[]): boolean {
+  if (post.accountIds.length === 0) return projetos.includes(post.projectId);
+  return post.accountIds.some((id) => idsDeConta.has(id));
+}
+
+/**
+ * Transforma compromissos da agenda em pautas no quadro.
+ *
+ * Devolve as peças criadas. Idempotente por `origemEventoId`: rodar de novo
+ * sobre a mesma agenda não cria nada — o que importa porque o Google exporta o
+ * calendário inteiro toda vez, e a importação chama esta função sempre.
+ *
+ * A pauta nasce **sem formato e sem conta**. É deliberado: as duas coisas são
+ * decisão de quem vai produzir, e preenchê-las por conta própria transformaria
+ * um palpite da plataforma em algo que parece escolha de alguém.
+ */
+function gerarPautas(eventos: Evento[], criadoPor: string): Post[] {
+  const db = getDb();
+  const pendentes = eventosSemPauta(eventos, db.posts);
+
+  const novas = pendentes.map((evento): Post => {
+    const pauta: Post = {
+      id: nextId("post"),
+      projectId: evento.projectId,
+      accountIds: [],
+      format: "a_definir",
+      caption: pautaDoEvento(evento),
+      media: { count: 1, aspectRatio: "4:5", fileSizeMb: 0 },
+      status: "ideia",
+      scheduledFor: evento.comecaEm,
+      publishedAt: null,
+      createdBy: criadoPor,
+      approvedBy: null,
+      requiresApproval: true,
+      metrics: null,
+      coverGradient: "linear-gradient(135deg, oklch(0.62 0.19 10), oklch(0.4 0.16 300))",
+      origemEventoId: evento.id,
+    };
+
+    // O vínculo vale nos dois sentidos: o evento lista suas peças, e a peça
+    // sabe de onde veio. Sem o primeiro, a tela do evento abriria vazia.
+    evento.postIds = [...new Set([...evento.postIds, pauta.id])];
+    return pauta;
+  });
+
+  db.posts.unshift(...novas);
+  return novas;
+}
+
+/**
  * Tudo o que a agenda mostra, para o projeto e o período pedidos.
  *
  * Devolve peças e eventos crus, e não já agrupados por dia. O agrupamento é
@@ -3145,9 +3292,10 @@ export const listarAgenda = createServerFn({ method: "POST" })
       eventos: db.eventos
         .filter((evento) => projetos.includes(evento.projectId))
         .sort((a, b) => a.comecaEm.localeCompare(b.comecaEm)),
-      posts: db.posts
-        .filter((post) => post.accountIds.some((id) => idsDeConta.has(id)))
-        .sort(sortPostsByRecency),
+      // A pauta nascida da agenda ainda não escolheu canal — filtrar só por
+      // conta a deixaria invisível justamente na tela onde ela precisa
+      // aparecer. Sem conta, quem manda é o projeto.
+      posts: db.posts.filter((post) => vePeca(post, idsDeConta, projetos)).sort(sortPostsByRecency),
       contas,
       users: db.users,
     };
@@ -3219,9 +3367,12 @@ export const salvarEvento = createServerFn({ method: "POST" })
     };
 
     db.eventos.push(evento);
+    // O compromisso já entra no quadro como pauta. É o que o evento é para quem
+    // faz conteúdo: uma coisa que vai acontecer e da qual vai sair material.
+    const pautas = gerarPautas([evento], usuario.id);
     anotarDe(usuario, { acao: "evento_criado", alvoRotulo: data.titulo });
     await persistir();
-    return { evento };
+    return { evento, pautasCriadas: pautas.length };
   });
 
 export const removerEvento = createServerFn({ method: "POST" })
@@ -3236,6 +3387,43 @@ export const removerEvento = createServerFn({ method: "POST" })
     anotarDe(usuario, { acao: "evento_removido", alvoRotulo: evento.titulo });
     await persistir();
     return { ok: true as const };
+  });
+
+/**
+ * Um compromisso e tudo o que gira em volta dele.
+ *
+ * É a tela para onde vai quem clica num evento do calendário. Reúne o que
+ * estava espalhado: o compromisso em si, o município que o mapa reconheceu, as
+ * pautas que nasceram dele e as peças que alguém vinculou depois à mão.
+ */
+export const detalharEvento = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ eventoId: z.string() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const evento = db.eventos.find((candidato) => candidato.id === data.eventoId);
+    if (!evento) throw new Error("Compromisso não encontrado.");
+
+    const { projetos } = await exigirProjetos(evento.projectId);
+    if (!projetos.includes(evento.projectId)) throw new Error("Compromisso não encontrado.");
+
+    const vinculadas = new Set(evento.postIds);
+    const pecas = db.posts.filter(
+      (post) => post.origemEventoId === evento.id || vinculadas.has(post.id),
+    );
+
+    const municipio = evento.municipioCodigo
+      ? (MUNICIPIOS_SP.find((cidade) => cidade.codigo === evento.municipioCodigo) ?? null)
+      : null;
+
+    const contas = await contasPermitidas(evento.projectId);
+
+    return {
+      evento,
+      pecas: pecas.sort(sortPostsByRecency),
+      municipio: municipio && { codigo: municipio.codigo, nome: municipio.nome },
+      contas,
+      users: db.users,
+    };
   });
 
 /** Liga (ou desliga) uma peça de conteúdo a um compromisso. */
@@ -3288,6 +3476,11 @@ export const moverPecaDeFase = createServerFn({ method: "POST" })
         erro: `Uma peça em "${FASE_LABELS[post.status]}" não vai direto para "${FASE_LABELS[data.fase]}".`,
       };
     }
+
+    // Pauta sem formato não avança. A validação da rede pegaria isso na hora de
+    // publicar; recusar aqui é recusar no momento em que dá para resolver.
+    const pendencia = motivoParaNaoAvancar(post, data.fase);
+    if (pendencia) return { ok: false as const, erro: pendencia };
 
     // Publicar pelo quadro exige a mesma permissão que publicar pela tela de
     // publicação. Um atalho que ignora a regra é a regra deixando de existir.
@@ -3357,6 +3550,14 @@ export const aplicarAgendaIcs = createServerFn({ method: "POST" })
       if (indice >= 0) db.eventos[indice] = evento;
     }
 
+    // Cada compromisso importado vira pauta no quadro. `gerarPautas` olha o
+    // banco inteiro, e não só o que acabou de entrar: assim uma reimportação
+    // completa o que faltava sem duplicar o que já existe.
+    const pautas = gerarPautas(
+      db.eventos.filter((evento) => evento.projectId === data.projectId),
+      usuario.id,
+    );
+
     anotarDe(usuario, {
       acao: "agenda_importada",
       alvoRotulo: `${plano.novos.length} novos, ${plano.atualizados.length} atualizados`,
@@ -3368,7 +3569,57 @@ export const aplicarAgendaIcs = createServerFn({ method: "POST" })
       atualizados: plano.atualizados.length,
       iguais: plano.iguais,
       ignorados: plano.ignorados.length,
+      pautasCriadas: pautas.length,
     };
+  });
+
+/**
+ * Decide o que a pauta vai ser: carrossel, imagem, vídeo ou story.
+ *
+ * É o passo que faltava entre "sábado tem caminhada" e uma peça de verdade.
+ * Junto com o formato vai a mídia esperada — o mesmo padrão que o editor usa —
+ * porque um formato sem proporção nem tamanho não passa na validação de rede
+ * nenhuma, e deixar isso para depois só adia o mesmo problema.
+ *
+ * Também aceita as contas em que a peça vai sair. As duas coisas juntas numa
+ * chamada só porque é uma decisão só: quem escolhe "reels" já sabe onde.
+ */
+export const definirFormatoDaPauta = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      postId: z.string(),
+      formato: z.enum(["imagem", "carrossel", "video", "story"]),
+      accountIds: z.array(z.string()).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const post = db.posts.find((candidato) => candidato.id === data.postId);
+    if (!post) throw new Error("Peça não encontrada.");
+
+    const { projetos, usuario } = await exigirProjetos(post.projectId);
+    if (!projetos.includes(post.projectId)) throw new Error("Peça não encontrada.");
+
+    // Peça já publicada não muda de formato: o que está no ar é o que está no
+    // ar, e reescrever o registro faria a análise por formato mentir.
+    if (post.status === "publicado") {
+      return { ok: false as const, erro: "Peça publicada não muda de formato." };
+    }
+
+    post.format = data.formato;
+    post.media = MIDIA_PADRAO[data.formato];
+    if (data.accountIds) post.accountIds = data.accountIds;
+
+    anotarDe(usuario, {
+      acao: "publicacao_alterada",
+      projetoId: post.projectId,
+      alvoId: post.id,
+      alvoRotulo: resumoDaLegenda(post.caption),
+      detalhes: { formato: data.formato },
+    });
+    await persistir();
+
+    return { ok: true as const, post };
   });
 
 /** O dia de hoje, para a tela que abre com ele. */
@@ -3384,7 +3635,7 @@ export const resumoDeHoje = createServerFn({ method: "POST" })
     const resumo = resumirDia(
       dia,
       db.eventos.filter((evento) => projetos.includes(evento.projectId)),
-      db.posts.filter((post) => post.accountIds.some((id) => idsDeConta.has(id))),
+      db.posts.filter((post) => vePeca(post, idsDeConta, projetos)),
       db.inbox.filter((item) => idsDeConta.has(item.accountId)),
     );
 

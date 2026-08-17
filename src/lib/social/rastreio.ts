@@ -116,6 +116,7 @@ export function conversasPorPeca(interacoes: InboxItem[]): Record<string, number
 }
 
 const NOME_DO_FORMATO: Record<PostFormat, string> = {
+  a_definir: "formato a definir",
   imagem: "imagem",
   carrossel: "carrossel",
   video: "vídeo",

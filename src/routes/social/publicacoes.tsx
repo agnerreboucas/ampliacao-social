@@ -6,6 +6,7 @@ import {
   CirclePlay,
   Images,
   Image as ImageIcon,
+  Lightbulb,
   ListChecks,
   Plus,
   Send,
@@ -18,6 +19,7 @@ import { toast } from "sonner";
 
 import { atualizarPublicacao, listarPublicacoes } from "@/lib/api/social.functions";
 import { PostEditorDialog } from "@/components/social/post-editor";
+import { NOME_DO_FORMATO } from "@/lib/social/conteudo";
 import {
   AccountAvatar,
   EmptyState,
@@ -47,6 +49,7 @@ const STATUS_TONES: Record<PostStatus, PillTone> = {
 };
 
 const FORMAT_ICONS = {
+  a_definir: Lightbulb,
   imagem: ImageIcon,
   carrossel: Images,
   video: Video,
@@ -241,7 +244,7 @@ function PostRow({
             <StatusPill tone={STATUS_TONES[post.status]}>
               {POST_STATUS_LABELS[post.status]}
             </StatusPill>
-            <span className="capitalize">{post.format}</span>
+            <span>{NOME_DO_FORMATO[post.format]}</span>
             {post.format === "carrossel" ? <span>· {post.media.count} itens</span> : null}
             {post.format === "video" ? <span>· {post.media.durationSeconds}s</span> : null}
             <span>· {post.media.aspectRatio}</span>
@@ -273,9 +276,13 @@ function PostRow({
         </div>
 
         {post.metrics ? (
-          <div className="text-right text-sm tabular-nums">
-            <div className="font-semibold">{formatCompact(post.metrics.reach)}</div>
-            <div className="text-xs text-muted-foreground">alcance</div>
+          // Alcance sozinho não diz se a peça funcionou: mil pessoas alcançadas
+          // com duas curtidas e mil com duzentas são resultados opostos, e a
+          // diferença só aparecia se alguém abrisse o detalhe.
+          <div className="grid shrink-0 grid-cols-3 gap-3 text-right text-sm tabular-nums">
+            <Numero rotulo="alcance" valor={formatCompact(post.metrics.reach)} destaque />
+            <Numero rotulo="curtidas" valor={formatCompact(post.metrics.likes)} />
+            <Numero rotulo="coment." valor={formatCompact(post.metrics.comments)} />
           </div>
         ) : null}
       </div>
@@ -308,6 +315,23 @@ function PostRow({
         </div>
       ) : null}
     </li>
+  );
+}
+
+function Numero({
+  rotulo,
+  valor,
+  destaque = false,
+}: {
+  rotulo: string;
+  valor: string;
+  destaque?: boolean;
+}) {
+  return (
+    <div>
+      <div className={destaque ? "font-semibold" : ""}>{valor}</div>
+      <div className="text-xs text-muted-foreground">{rotulo}</div>
+    </div>
   );
 }
 

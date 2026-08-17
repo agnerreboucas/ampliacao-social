@@ -1022,13 +1022,75 @@ const estadoGuardado: EstadoPersistivel | null = await carregarEstadoInicial().c
 });
 
 /**
- * Primeira subida com banco vazio: a semente é gravada.
+ * O estado que uma instalação de produção recebe no primeiro dia.
+ *
+ * **Um projeto e um administrador. Mais nada.**
+ *
+ * A semente de demonstração tem três projetos — um mercadinho, um estúdio e a
+ * campanha — e cinco pessoas fictícias. Ela existe para desenvolver e para
+ * mostrar a plataforma funcionando. Gravá-la no banco de um cliente real seria
+ * entregar a plataforma com dados de mentira dentro, e alguém teria de apagar
+ * um por um antes de começar a usar — no dia em que a pressa é maior.
+ *
+ * Os dois valores vêm do ambiente porque são a única coisa que muda entre uma
+ * instalação e outra. O usuário nasce sem senha: ela é definida pelo
+ * `npm run senha`, que grava um hash e nunca põe a senha no repositório.
+ */
+function estadoDeEstreia(): EstadoPersistivel {
+  const email = process.env.ADMIN_EMAIL ?? "";
+  const nomeDoProjeto = process.env.PROJETO_INICIAL ?? "Campanha";
+
+  const projeto: Project = { id: "proj-1", name: nomeDoProjeto, client: nomeDoProjeto };
+  const administrador: PlatformUser = {
+    id: "user-1",
+    name: process.env.ADMIN_NOME ?? (email.split("@")[0] || "Administrador"),
+    email,
+    role: "administrador",
+    projectIds: [projeto.id],
+    lastActiveAt: new Date().toISOString(),
+    avatarGradient: GRADIENTS[0],
+  };
+
+  return {
+    projects: [projeto],
+    users: [administrador],
+    accounts: [],
+    metrics: new Map(),
+    audience: new Map(),
+    posts: [],
+    boosts: [],
+    inbox: [],
+    eventos: [],
+    reports: [],
+    atualizacoes: [],
+  };
+}
+
+/**
+ * Primeira subida com banco vazio.
  *
  * Sem isto, a plataforma abriria mostrando usuários e projetos que não existem
  * em tabela nenhuma — e definir a senha de alguém falharia com "usuário não
  * encontrado", que é confuso justamente no primeiro minuto de uso.
+ *
+ * O que é gravado depende do ambiente: em produção, a estreia limpa; fora
+ * dela, a semente de demonstração, que é o que faz a plataforma abrir cheia
+ * para quem está desenvolvendo ou apresentando.
  */
 if (estadoGuardado === null && usandoBanco()) {
+  const emProducao = process.env.NODE_ENV === "production";
+
+  if (emProducao) {
+    if (!process.env.ADMIN_EMAIL) {
+      throw new Error(
+        "Banco vazio em produção e ADMIN_EMAIL não definida. " +
+          "Defina o e-mail de quem vai administrar a plataforma — é a conta que vai receber a primeira senha.",
+      );
+    }
+    substituirEstado(estadoDeEstreia());
+    console.log(`Banco vazio: instalação nova para ${process.env.ADMIN_EMAIL}.`);
+  }
+
   const resultado = await gravarEstado(getDb());
   if (resultado.gravado) {
     console.log(`Banco vazio: estado inicial gravado em ${resultado.destino}.`);
@@ -1061,7 +1123,12 @@ function criarOuRestaurar(): SocialDatabase {
     users: salvo.users.length > 0 ? salvo.users : base.users,
     accounts: salvo.accounts,
     metrics: salvo.metrics,
-    audience: salvo.audience.size > 0 ? salvo.audience : base.audience,
+    // Sem fallback para a semente: o público é indexado por conta, e as contas
+    // vêm inteiras do estado carregado. Completar com o público da demonstração
+    // produziria demografia de contas que não existem — o banco recusa a
+    // gravação com violação de chave estrangeira, e no melhor caso a tela
+    // mostraria números de um perfil fictício.
+    audience: salvo.audience,
     posts: salvo.posts,
     boosts: salvo.boosts,
     inbox: salvo.inbox,
@@ -1086,11 +1153,12 @@ export function substituirEstado(estado: EstadoPersistivel | null): void {
     users: estado.users.length > 0 ? estado.users : base.users,
     accounts: estado.accounts,
     metrics: estado.metrics,
-    audience: estado.audience.size > 0 ? estado.audience : base.audience,
+    // Ver `criarOuRestaurar`: o público acompanha as contas, sem mistura.
+    audience: estado.audience,
     posts: estado.posts,
     boosts: estado.boosts,
     inbox: estado.inbox,
-    eventos: [],
+    eventos: estado.eventos,
     reports: estado.reports,
     atualizacoes: estado.atualizacoes,
   };

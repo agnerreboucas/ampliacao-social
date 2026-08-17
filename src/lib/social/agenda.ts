@@ -312,3 +312,74 @@ export function horaDoItem(item: ItemDoDia): string | null {
   const data = new Date(iso);
   return `${String(data.getHours()).padStart(2, "0")}:${String(data.getMinutes()).padStart(2, "0")}`;
 }
+
+// --- Da agenda para a pauta --------------------------------------------------
+
+/**
+ * Todo compromisso da campanha é conteúdo em potencial.
+ *
+ * A caminhada de sábado não é só um horário na agenda: é reels, é carrossel, é
+ * story. Antes, a pessoa importava a agenda inteira do Google e depois digitava
+ * de novo, uma a uma, as pautas correspondentes — o mesmo trabalho duas vezes, e
+ * a segunda vez sempre incompleta.
+ *
+ * Agora o evento entra no quadro como **pauta**, na coluna de ideias, marcada
+ * como vinda da agenda. O que a pauta ainda **não** tem é formato: quem decide
+ * se aquilo vira carrossel ou reels é uma pessoa olhando, e é por isso que
+ * `a_definir` existe como formato de verdade em vez de um chute qualquer.
+ *
+ * A ligação é `origemEventoId`. É ela que faz a reimportação do mesmo
+ * calendário — que o Google exporta inteiro, sempre — não criar a mesma pauta
+ * pela segunda vez.
+ */
+export function eventosSemPauta(eventos: Evento[], posts: Post[]): Evento[] {
+  const jaGeraram = new Set(
+    posts.map((post) => post.origemEventoId).filter((id): id is string => Boolean(id)),
+  );
+  return eventos.filter((evento) => !jaGeraram.has(evento.id));
+}
+
+/** As pautas que nasceram de um compromisso. */
+export function pautasDoEvento(evento: Evento, posts: Post[]): Post[] {
+  return posts.filter((post) => post.origemEventoId === evento.id);
+}
+
+/**
+ * O texto com que a pauta nasce.
+ *
+ * Não é a legenda final — é o bilhete que faz alguém entender, uma semana
+ * depois, de que compromisso aquilo saiu. Por isso carrega quando e onde: sem a
+ * data, "Caminhada" no meio de trinta pautas não diz qual caminhada.
+ */
+export function pautaDoEvento(evento: Evento): string {
+  const partes = [evento.titulo];
+
+  const data = new Date(evento.comecaEm);
+  const dia = `${String(data.getDate()).padStart(2, "0")}/${String(data.getMonth() + 1).padStart(2, "0")}`;
+  partes.push(
+    evento.diaInteiro
+      ? `${dia}, dia inteiro`
+      : `${dia} às ${String(data.getHours()).padStart(2, "0")}h${String(data.getMinutes()).padStart(2, "0")}`,
+  );
+
+  if (evento.local) partes.push(evento.local);
+
+  return partes.join(" · ");
+}
+
+/**
+ * O que impede uma peça de avançar de fase, além da ordem das fases.
+ *
+ * Existe uma regra só, e ela é o motivo de `a_definir` existir: **pauta sem
+ * formato não vira produção**. Deixar avançar produziria uma peça agendada que
+ * nenhuma rede aceita — o erro apareceria na hora de publicar, que é o pior
+ * momento possível para descobrir que ninguém decidiu se aquilo era um reels.
+ *
+ * Devolve o motivo em texto, e não `false`, porque o botão que recusa sem dizer
+ * por quê é o botão que a pessoa clica de novo.
+ */
+export function motivoParaNaoAvancar(post: Post, destino: PostStatus): string | null {
+  if (destino === "ideia" || destino === "rascunho") return null;
+  if (post.format !== "a_definir") return null;
+  return "Escolha o formato da peça antes de avançar: carrossel, imagem, vídeo ou story.";
+}

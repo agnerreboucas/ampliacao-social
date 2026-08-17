@@ -61,6 +61,7 @@ export type AcaoHistorico =
   // Equipe e dados
   | "usuario_convidado"
   | "usuario_alterado"
+  | "perfil_editado"
   | "dados_exportados"
   | "dados_importados";
 
@@ -156,6 +157,7 @@ export const ACOES: Record<
 
   usuario_convidado: { verbo: "convidou alguém para a equipe", area: "Equipe", peso: "atencao" },
   usuario_alterado: { verbo: "alterou o acesso de alguém", area: "Equipe", peso: "atencao" },
+  perfil_editado: { verbo: "atualizou o próprio perfil", area: "Equipe", peso: "normal" },
   dados_exportados: { verbo: "exportou os dados da plataforma", area: "Dados", peso: "atencao" },
   dados_importados: { verbo: "substituiu os dados da plataforma", area: "Dados", peso: "atencao" },
 };

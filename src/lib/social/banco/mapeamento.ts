@@ -96,6 +96,8 @@ export function paraProjeto(linha: Linha): Project {
 
 export function paraUsuario(linha: Linha, projectIds: string[]): PlatformUser {
   const senhaHash = textoOuNulo(linha.senha_hash);
+  const area = textoOuNulo(linha.area);
+  const telefone = textoOuNulo(linha.telefone);
   return {
     id: texto(linha.id),
     name: texto(linha.nome),
@@ -105,6 +107,8 @@ export function paraUsuario(linha: Linha, projectIds: string[]): PlatformUser {
     projectIds,
     lastActiveAt: instante(linha.ultimo_acesso_em),
     avatarGradient: texto(linha.avatar_gradiente),
+    ...(area === null ? {} : { area }),
+    ...(telefone === null ? {} : { telefone }),
   };
 }
 
@@ -147,6 +151,7 @@ export function paraMetrica(linha: Linha): DailyMetric {
 export function paraPublicacao(linha: Linha, accountIds: string[]): Post {
   const republicadoDe = textoOuNulo(linha.republicado_de);
   const motivoFalha = textoOuNulo(linha.motivo_falha);
+  const origemEventoId = textoOuNulo(linha.origem_evento_id);
   return {
     id: texto(linha.id),
     projectId: texto(linha.projeto_id),
@@ -164,6 +169,7 @@ export function paraPublicacao(linha: Linha, accountIds: string[]): Post {
     ...(motivoFalha === null ? {} : { failureReason: motivoFalha }),
     metrics: (linha.metricas as Post["metrics"]) ?? null,
     coverGradient: texto(linha.capa_gradiente),
+    ...(origemEventoId === null ? {} : { origemEventoId }),
   };
 }
 
@@ -257,6 +263,8 @@ export function deUsuario(usuario: PlatformUser, ordem = 0): unknown[] {
     usuario.avatarGradient,
     ordem,
     usuario.senhaHash ?? null,
+    usuario.area ?? null,
+    usuario.telefone ?? null,
   ];
 }
 
@@ -297,6 +305,7 @@ export function dePublicacao(post: Post): unknown[] {
     post.failureReason ?? null,
     post.metrics === null ? null : JSON.stringify(post.metrics),
     post.coverGradient,
+    post.origemEventoId ?? null,
   ];
 }
 

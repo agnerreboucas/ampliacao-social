@@ -192,15 +192,23 @@ function SocialShell() {
         </div>
 
         <div className="hidden items-center gap-3 border-t border-border px-5 py-4 lg:flex">
-          <AccountAvatar
-            gradient={session.user.avatarGradient}
-            label={session.user.name}
-            size={34}
-          />
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-medium">{session.user.name}</div>
-            <div className="text-xs text-muted-foreground">{ROLE_LABELS[role]}</div>
-          </div>
+          {/* O bloco de quem está logado é o lugar onde toda plataforma põe o
+              acesso ao próprio perfil — procurar em outro canto seria inventar
+              uma convenção só nossa. */}
+          <Link
+            to="/social/perfil"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition-colors hover:bg-secondary"
+          >
+            <AccountAvatar
+              gradient={session.user.avatarGradient}
+              label={session.user.name}
+              size={34}
+            />
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-sm font-medium">{session.user.name}</div>
+              <div className="text-xs text-muted-foreground">{ROLE_LABELS[role]}</div>
+            </div>
+          </Link>
           <button
             type="button"
             onClick={() => {

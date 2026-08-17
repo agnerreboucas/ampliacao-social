@@ -47,6 +47,7 @@ import {
   formatPercent,
   formatRelative,
 } from "@/lib/social/format";
+import { NOME_DO_FORMATO } from "@/lib/social/conteudo";
 import { useSocialSession } from "@/lib/social/session";
 import type { Post, PostFormat, PostStatus, SocialAccount } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
@@ -751,7 +752,10 @@ function VisualizadorDeMidia({
       <dl className="mt-4 space-y-2 text-sm">
         <div className="flex justify-between">
           <dt className="text-muted-foreground">Formato</dt>
-          <dd className="capitalize">{formato}</dd>
+          {/* O nome vem da tabela do domínio, não do valor cru: `a_definir`
+              chegava à tela como "A_definir", que é a plataforma falando
+              consigo mesma na frente de quem está usando. */}
+          <dd>{NOME_DO_FORMATO[formato]}</dd>
         </div>
         <div className="flex justify-between">
           <dt className="text-muted-foreground">Itens</dt>

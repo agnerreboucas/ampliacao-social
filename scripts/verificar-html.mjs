@@ -195,6 +195,147 @@ if ((await campoEmail.count()) === 0) {
     erros.push("o histórico não registrou a entrada");
   }
 
+  // --- Minha área -----------------------------------------------------------
+  //
+  // A tela do perfil precisa trazer as três coisas que a justificam: quem a
+  // pessoa é, o que o papel dela permite, e o que ela não pode fazer.
+  await pagina
+    .getByRole("link", { name: /Administrador|Gestor|Editor|Atendimento/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2500);
+
+  const perfil = await pagina.locator("body").innerText();
+  for (const [rotulo, marca] of [
+    ["a área do usuário abriu", /Minha área/i],
+    ["o e-mail de quem entrou", /@/],
+    ["a frente de atuação", /Frente de atuação/i],
+    ["o que o papel permite", /Você pode/i],
+    ["e o que ele não permite", /Você não pode|Papel só muda/i],
+  ]) {
+    if (marca.test(perfil)) console.log(`✓ ${rotulo}`);
+    else erros.push(`perfil: faltou ${rotulo}`);
+  }
+
+  // --- Compromisso vira pauta ------------------------------------------------
+  //
+  // O caminho inteiro do pedido: cadastrar o compromisso, ver a pauta nascer no
+  // quadro marcada como vinda da agenda, e escolher o formato ali mesmo.
+  await pagina
+    .getByRole("link", { name: /^Agenda/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2000);
+
+  await pagina
+    .getByRole("button", { name: /Compromisso/ })
+    .first()
+    .click();
+  await pagina.waitForTimeout(1000);
+  await pagina.getByLabel(/Título/i).fill("Caminhada na Vila Nova");
+  const campoLocal = pagina.getByLabel(/Local/i);
+  if (await campoLocal.count()) await campoLocal.first().fill("Campinas");
+  await pagina
+    .getByRole("button", { name: /^Salvar|Criar/ })
+    .last()
+    .click();
+  await pagina.waitForTimeout(2500);
+
+  await pagina.getByRole("button", { name: "Produção", exact: true }).click();
+  await pagina.waitForTimeout(2000);
+
+  // A coluna de ideias começa recolhida quando está vazia; a pauta cai lá.
+  const abrirIdeia = pagina.locator('button[title="Abrir Ideia"]').first();
+  if (await abrirIdeia.count()) {
+    await abrirIdeia.click();
+    await pagina.waitForTimeout(1200);
+  }
+
+  const quadro = await pagina.locator("body").innerText();
+  if (/Da agenda/.test(quadro)) console.log("✓ o compromisso virou pauta marcada como da agenda");
+  else erros.push("o compromisso não virou pauta no quadro");
+
+  if (/Post simples/.test(quadro)) console.log("✓ a pauta oferece a escolha do formato");
+  else erros.push("a pauta não oferece a escolha do formato");
+
+  const semFormato = () => pagina.locator("text=Esta pauta ainda não tem formato").count();
+  const antes = await semFormato();
+  const carrossel = pagina.getByRole("button", { name: "Carrossel", exact: true }).first();
+  if (await carrossel.count()) {
+    await carrossel.click();
+    await pagina.waitForTimeout(2500);
+    if ((await semFormato()) < antes) console.log("✓ escolher o formato decide a pauta");
+    else erros.push("escolher o formato não mudou a pauta");
+  } else {
+    erros.push("não achei o botão de carrossel na pauta");
+  }
+
+  // --- Tela do compromisso ---------------------------------------------------
+  await pagina
+    .getByRole("link", { name: /^Agenda/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2000);
+
+  // A visão de produção não desenha calendário nenhum; o compromisso só é
+  // clicável na visão que mostra os dias.
+  await pagina.getByRole("button", { name: "Tudo", exact: true }).click();
+  await pagina.waitForTimeout(1500);
+  await pagina.getByRole("button", { name: /Hoje/i }).first().click();
+  await pagina.waitForTimeout(1500);
+  const celulaDeHoje = pagina
+    .locator("button")
+    .filter({ hasText: "Caminhada na Vila Nova" })
+    .first();
+  if (await celulaDeHoje.count()) {
+    await celulaDeHoje.click();
+    await pagina.waitForTimeout(1500);
+  }
+
+  const linkDoEvento = pagina
+    .getByRole("link", { name: "Caminhada na Vila Nova", exact: true })
+    .first();
+  if (await linkDoEvento.count()) {
+    await linkDoEvento.click();
+    await pagina.waitForTimeout(2500);
+    const evento = await pagina.locator("body").innerText();
+    if (/Onde e quando/i.test(evento) && /Conteúdo que sai daqui/i.test(evento)) {
+      console.log("✓ clicar no compromisso abre a tela dele, com o conteúdo que saiu dali");
+    } else {
+      erros.push("a tela do compromisso não abriu completa");
+    }
+  } else {
+    erros.push("o compromisso não ficou clicável na agenda");
+  }
+
+  // --- Números onde a pessoa olha ------------------------------------------
+  //
+  // O que já foi ao ar precisa mostrar como foi no mesmo lugar em que aparece.
+  await pagina
+    .getByRole("link", { name: /^Publicações/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2500);
+  // A lista abre na fila de produção, onde nada tem número ainda.
+  await pagina
+    .getByRole("button", { name: /^Publicado/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(2000);
+
+  const lista = await pagina.locator("body").innerText();
+  if (/alcance/i.test(lista) && /curtidas/i.test(lista) && /coment/i.test(lista)) {
+    console.log("✓ a lista de publicações traz alcance, curtidas e comentários");
+  } else {
+    erros.push("a lista de publicações não traz os números da peça");
+  }
+
+  if (/A_definir/.test(lista)) {
+    erros.push("o formato aparece cru na tela (A_definir)");
+  } else {
+    console.log("✓ nenhum nome técnico de formato vazou para a tela");
+  }
+
   await pagina.screenshot({ path: process.env.CAPTURA ?? "/tmp/html.png", fullPage: true });
 }
 

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import {
   aplicarAgendaIcs,
+  definirFormatoDaPauta,
   lerAgendaIcs,
   listarAgenda,
   moverPecaDeFase,
@@ -48,7 +49,7 @@ import {
 import { TIPO_DE_EVENTO_LABELS } from "@/lib/social/format";
 import { can } from "@/lib/social/permissions";
 import { useSocialSession } from "@/lib/social/session";
-import type { Evento, TipoDeEvento } from "@/lib/social/types";
+import type { Evento, FormatoPublicavel, TipoDeEvento } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/social/agenda")({
@@ -96,6 +97,7 @@ function AgendaPage() {
 
   const eventos = dados.data?.eventos ?? [];
   const posts = dados.data?.posts ?? [];
+  const contas = dados.data?.contas ?? [];
   const podeEditar = can(session?.user.role, "publicar");
 
   const quadro = montarQuadro(posts);
@@ -132,6 +134,23 @@ function AgendaPage() {
       invalidar();
     },
     onError: () => toast.error("Não foi possível mover a peça."),
+  });
+
+  // Decidir o formato da pauta é a operação que tira o compromisso da agenda e
+  // o põe no caminho da produção. Fica no quadro, e não numa tela à parte,
+  // porque é ali que a pessoa está olhando quando decide.
+  const decidir = useMutation({
+    mutationFn: (entrada: { postId: string; formato: FormatoPublicavel }) =>
+      definirFormatoDaPauta({ data: entrada }),
+    onSuccess: (resultado) => {
+      if (!resultado.ok) {
+        toast.error(resultado.erro);
+        return;
+      }
+      invalidar();
+      toast.success("Formato definido.");
+    },
+    onError: () => toast.error("Não foi possível definir o formato."),
   });
 
   const remover = useMutation({
@@ -236,6 +255,11 @@ function AgendaPage() {
               )
             }
             onCriar={podeEditar ? () => navigate({ to: "/social/publicacoes" }) : undefined}
+            onEscolherFormato={
+              podeEditar ? (postId, formato) => decidir.mutate({ postId, formato }) : undefined
+            }
+            decidindo={decidir.isPending ? (decidir.variables?.postId ?? null) : null}
+            contas={contas}
           />
         </SectionCard>
       ) : (
@@ -329,6 +353,7 @@ function AgendaPage() {
           }
         >
           <PainelDoDia
+            contas={contas}
             dia={diaAberto}
             itens={itensDoDia(diaAberto, eventos, posts)}
             visao={visao}

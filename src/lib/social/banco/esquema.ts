@@ -32,7 +32,10 @@ create table if not exists usuarios (
   ordem integer not null default 0,
   -- Derivação scrypt da senha, nunca a senha. Só existe aqui: o snapshot em
   -- JSON, que vai para o Git, omite esta coluna de propósito.
-  senha_hash text
+  senha_hash text,
+  -- A frente em que a pessoa atua na campanha. Não é o papel.
+  area text,
+  telefone text
 );
 
 create unique index if not exists usuarios_email_unico on usuarios (lower(email));
@@ -104,7 +107,9 @@ create table if not exists publicacoes (
   exige_aprovacao boolean not null,
   motivo_falha text,
   metricas jsonb,
-  capa_gradiente text not null
+  capa_gradiente text not null,
+  -- O compromisso da agenda que virou esta pauta. Nulo para peça criada à mão.
+  origem_evento_id text
 );
 
 create index if not exists publicacoes_por_projeto on publicacoes (projeto_id);
@@ -268,6 +273,9 @@ alter table projetos add column if not exists ordem integer not null default 0;
 alter table usuarios add column if not exists ordem integer not null default 0;
 alter table contas add column if not exists ordem integer not null default 0;
 alter table usuarios add column if not exists senha_hash text;
+alter table publicacoes add column if not exists origem_evento_id text;
+alter table usuarios add column if not exists area text;
+alter table usuarios add column if not exists telefone text;
 `;
 
 /**

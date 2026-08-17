@@ -8,6 +8,7 @@ import {
   Images,
   Image as ImageIcon,
   Inbox,
+  Lightbulb,
   LoaderCircle,
   MessageCircle,
   Radio,
@@ -467,6 +468,7 @@ function RelacionamentoPage() {
 }
 
 const ICONE_DO_FORMATO: Record<PostFormat, typeof ImageIcon> = {
+  a_definir: Lightbulb,
   imagem: ImageIcon,
   carrossel: Images,
   video: Video,

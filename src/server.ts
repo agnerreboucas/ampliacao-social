@@ -2,6 +2,38 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { exigirProducaoConfigurada } from "./lib/producao.server";
+
+/**
+ * A conferência de produção roda na carga do módulo, antes da primeira
+ * requisição.
+ *
+ * Aqui e não dentro do `fetch` de propósito: falhar na subida aparece no log de
+ * implantação da hospedagem, que é onde alguém está olhando naquele minuto.
+ * Falhar na primeira requisição apareceria como uma página de erro para um
+ * visitante — e a plataforma teria ficado no ar, aberta, até alguém tentar
+ * entrar.
+ */
+exigirProducaoConfigurada();
+
+/**
+ * O estado é carregado na subida, e não na primeira requisição.
+ *
+ * O módulo do store resolve a leitura do banco no topo dele; até alguém chamar
+ * uma função de servidor, ele nem é importado. Numa implantação nova isso
+ * significa banco vazio até a primeira visita — e `npm run senha` falhando com
+ * "nenhum usuário com esse e-mail" para quem seguiu o passo a passo na ordem
+ * certa.
+ *
+ * Carregando aqui, a instalação existe assim que o processo sobe: dá para
+ * definir a senha antes de abrir a plataforma pela primeira vez. Se o banco
+ * estiver fora do ar, o erro aparece no log da implantação em vez de aparecer
+ * para um visitante.
+ */
+await import("./lib/social/store.server").catch((erro) => {
+  console.error("Não foi possível preparar o estado da plataforma na subida.", erro);
+  throw erro;
+});
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;

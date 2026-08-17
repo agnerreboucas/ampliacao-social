@@ -83,6 +83,41 @@ try {
   await garantirEsquema();
   const pool = obterPool();
 
+  /**
+   * Banco vazio: este comando cria a instalação.
+   *
+   * É o primeiro comando de uma implantação nova, e sem isto ele falharia com
+   * "nenhum usuário com esse e-mail" — o passo a passo certo devolvendo um erro
+   * que parece engano de quem digitou. A instalação nasce mínima de propósito:
+   * um projeto e um administrador, sem dado de demonstração nenhum.
+   */
+  const { rows: existentes } = await pool.query("select count(*)::int as total from usuarios");
+  if (existentes[0].total === 0) {
+    const nomeDoProjeto = env.PROJETO_INICIAL ?? "Campanha";
+    const nome = env.ADMIN_NOME ?? emailArg.split("@")[0];
+
+    await pool.query(
+      "insert into projetos (id, nome, cliente, ordem) values ($1, $2, $2, 0)",
+      ["proj-1", nomeDoProjeto],
+    );
+    await pool.query(
+      `insert into usuarios (id, nome, email, papel, ultimo_acesso_em, avatar_gradiente, ordem)
+       values ($1, $2, $3, 'administrador', now(), $4, 0)`,
+      [
+        "user-1",
+        nome,
+        emailArg,
+        "linear-gradient(135deg, oklch(0.55 0.22 30), oklch(0.35 0.18 280))",
+      ],
+    );
+    await pool.query(
+      "insert into usuario_projetos (usuario_id, projeto_id) values ($1, $2)",
+      ["user-1", "proj-1"],
+    );
+
+    console.log(`Banco vazio: criei o projeto "${nomeDoProjeto}" e o administrador ${emailArg}.`);
+  }
+
   const { rows } = await pool.query(
     "select id, nome, email from usuarios where lower(email) = lower($1)",
     [emailArg],

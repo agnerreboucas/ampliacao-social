@@ -1,5 +1,15 @@
 import { Link } from "@tanstack/react-router";
-import { CalendarDays, ChevronLeft, CircleDot, Clock, MapPin, Plus, Send } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronLeft,
+  Clock,
+  Eye,
+  Heart,
+  MapPin,
+  MessageCircle,
+  Plus,
+  Send,
+} from "lucide-react";
 
 import {
   chaveDoDia,
@@ -10,8 +20,10 @@ import {
   nomeDoDiaDaSemana,
   type ItemDoDia,
 } from "@/lib/social/agenda";
+import { NOME_DO_FORMATO } from "@/lib/social/conteudo";
+import { NETWORKS } from "@/lib/social/networks";
 import { FASE_LABELS, TIPO_DE_EVENTO_LABELS } from "@/lib/social/format";
-import type { Evento, Post } from "@/lib/social/types";
+import type { Evento, FormatoPublicavel, NetworkId, Post, SocialAccount } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -20,8 +32,8 @@ import { cn } from "@/lib/utils";
  * Uma decisão governa o desenho: **a célula do dia mostra pouco e o painel do
  * dia mostra tudo**. Encaixar seis itens numa caixa de dois centímetros produz
  * texto que ninguém lê e um mês que ninguém entende de relance. A célula mostra
- * três marcas e o resto vira "+2"; quem quer o detalhe clica, e o dia se abre
- * inteiro embaixo.
+ * quatro faixas e o resto vira "mais 2"; quem quer o detalhe clica no dia, e ele
+ * se abre inteiro embaixo — e clicar no compromisso leva à tela dele.
  *
  * Os três papéis têm cores próprias e sempre as mesmas: evento, produção e
  * publicação. Trocar a cor entre as visões faria a pessoa reaprender o mapa a
@@ -38,6 +50,41 @@ const COR_DO_PAPEL: Record<ItemDoDia["papel"], string> = {
   producao: "bg-[oklch(0.68_0.16_75)]",
   agendado: "bg-[oklch(0.58_0.15_250)]",
   publicado: "bg-[oklch(0.62_0.14_165)]",
+};
+
+/**
+ * A faixa colorida de cada item dentro da célula do dia.
+ *
+ * Antes era um pontinho de seis pixels ao lado de um texto cinza, e um mês
+ * cheio virava uma névoa de pontos: dava para contar quantas coisas havia no
+ * dia, não para ver **de que tipo** elas eram sem parar e ler. A faixa com
+ * fundo lavado é o que todo calendário que as pessoas já usam faz — e a cor
+ * chega antes do texto, que é o ponto.
+ *
+ * O fundo é o mesmo tom da cor do papel a 12% e a barra à esquerda é o tom
+ * cheio: legível nos dois temas sem uma segunda paleta.
+ */
+const FAIXA_DO_PAPEL: Record<ItemDoDia["papel"], { fundo: string; barra: string }> = {
+  evento: {
+    fundo:
+      "bg-[oklch(0.62_0.19_10_/_0.14)] text-[oklch(0.45_0.17_10)] dark:text-[oklch(0.8_0.12_10)]",
+    barra: "bg-[oklch(0.62_0.19_10)]",
+  },
+  producao: {
+    fundo:
+      "bg-[oklch(0.68_0.16_75_/_0.16)] text-[oklch(0.45_0.14_75)] dark:text-[oklch(0.84_0.11_75)]",
+    barra: "bg-[oklch(0.68_0.16_75)]",
+  },
+  agendado: {
+    fundo:
+      "bg-[oklch(0.58_0.15_250_/_0.14)] text-[oklch(0.44_0.14_250)] dark:text-[oklch(0.82_0.1_250)]",
+    barra: "bg-[oklch(0.58_0.15_250)]",
+  },
+  publicado: {
+    fundo:
+      "bg-[oklch(0.62_0.14_165_/_0.16)] text-[oklch(0.42_0.12_165)] dark:text-[oklch(0.82_0.1_165)]",
+    barra: "bg-[oklch(0.62_0.14_165)]",
+  },
 };
 
 const NOME_DO_PAPEL: Record<ItemDoDia["papel"], string> = {
@@ -89,7 +136,7 @@ export function CalendarioDoMes({
         {grade.map((dia) => {
           const doMes = lerDia(dia).getMonth() === mes;
           const itens = filtrarPorVisao(porDia.get(dia) ?? [], visao);
-          const visiveis = itens.slice(0, 3);
+          const visiveis = itens.slice(0, 4);
 
           return (
             <button
@@ -97,7 +144,7 @@ export function CalendarioDoMes({
               type="button"
               onClick={() => onAbrirDia(dia)}
               className={cn(
-                "min-h-[5.5rem] rounded-lg border p-1.5 text-left align-top transition-colors",
+                "min-h-[7.5rem] rounded-xl border p-1.5 text-left align-top transition-colors",
                 diaAberto === dia
                   ? "border-accent bg-accent/5"
                   : "border-border hover:bg-secondary/50",
@@ -111,8 +158,8 @@ export function CalendarioDoMes({
                   className={cn(
                     "text-xs tabular-nums",
                     dia === hoje
-                      ? "rounded-full bg-foreground px-1.5 py-0.5 font-semibold text-background"
-                      : "text-muted-foreground",
+                      ? "grid size-6 place-items-center rounded-full bg-accent font-semibold text-accent-foreground"
+                      : "px-1 text-muted-foreground",
                   )}
                 >
                   {lerDia(dia).getDate()}
@@ -124,24 +171,35 @@ export function CalendarioDoMes({
                 ) : null}
               </div>
 
-              <ul className="mt-1 space-y-0.5">
-                {visiveis.map((item, indice) => (
-                  <li
-                    key={`${dia}-${indice}`}
-                    className="flex items-center gap-1 text-[10px] leading-tight"
-                  >
-                    <span
-                      aria-hidden
-                      className={cn("size-1.5 shrink-0 rounded-full", COR_DO_PAPEL[item.papel])}
-                    />
-                    <span className="min-w-0 truncate">
-                      {item.papel === "evento" ? item.evento.titulo : resumo(item.post)}
-                    </span>
-                  </li>
-                ))}
+              <ul className="mt-1 space-y-1">
+                {visiveis.map((item, indice) => {
+                  const faixa = FAIXA_DO_PAPEL[item.papel];
+                  const hora = horaDoItem(item);
+
+                  return (
+                    <li
+                      key={`${dia}-${indice}`}
+                      className={cn(
+                        "flex items-center gap-1 overflow-hidden rounded-md py-0.5 pl-0.5 pr-1 text-[10px] leading-tight",
+                        faixa.fundo,
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn("h-3.5 w-1 shrink-0 rounded-full", faixa.barra)}
+                      />
+                      {hora ? (
+                        <span className="shrink-0 tabular-nums opacity-80">{hora}</span>
+                      ) : null}
+                      <span className="min-w-0 truncate font-medium">
+                        {item.papel === "evento" ? item.evento.titulo : resumo(item.post)}
+                      </span>
+                    </li>
+                  );
+                })}
                 {itens.length > visiveis.length ? (
-                  <li className="text-[10px] text-muted-foreground">
-                    +{itens.length - visiveis.length}
+                  <li className="pl-1 text-[10px] text-muted-foreground">
+                    mais {itens.length - visiveis.length}
                   </li>
                 ) : null}
               </ul>
@@ -175,6 +233,68 @@ function Legenda({ visao }: { visao: Visao }) {
   );
 }
 
+/**
+ * Em que redes a peça sai, e como ela foi.
+ *
+ * Antes o cartão mostrava "3" ao lado de um círculo — três o quê? Três contas,
+ * mas nenhuma pista de **quais**, e um carrossel que vai só para o LinkedIn
+ * parecia igual a um que vai para Instagram, Facebook e TikTok. O ponto colorido
+ * de cada rede resolve isso sem ocupar espaço: é a mesma cor que a rede tem no
+ * painel inteiro.
+ *
+ * E quando a peça já foi ao ar, os números vêm junto. Um quadro de produção que
+ * mostra o que está sendo feito e esconde como foi o que já saiu obriga a pessoa
+ * a trocar de tela para responder "valeu a pena?" — que é a pergunta que ela
+ * está fazendo quando olha a coluna "publicado".
+ */
+function PontosDasRedes({ redes }: { redes: NetworkId[] }) {
+  if (redes.length === 0) return null;
+
+  return (
+    <span
+      className="inline-flex items-center gap-0.5"
+      title={redes.map((r) => NETWORKS[r].label).join(", ")}
+    >
+      {redes.map((rede, indice) => (
+        <span
+          key={`${rede}-${indice}`}
+          aria-hidden
+          className="size-2 rounded-full"
+          style={{ background: NETWORKS[rede].gradient }}
+        />
+      ))}
+      <span className="sr-only">{redes.map((r) => NETWORKS[r].label).join(", ")}</span>
+    </span>
+  );
+}
+
+function NumerosDaPeca({ post, compacto = false }: { post: Post; compacto?: boolean }) {
+  if (!post.metrics) return null;
+  const formatar = (valor: number) => valor.toLocaleString("pt-BR");
+
+  return (
+    <span
+      className={cn(
+        "inline-flex flex-wrap items-center gap-x-2 tabular-nums",
+        compacto && "gap-x-1.5",
+      )}
+    >
+      <span className="inline-flex items-center gap-0.5" title="Alcance">
+        <Eye className="size-3" />
+        {formatar(post.metrics.reach)}
+      </span>
+      <span className="inline-flex items-center gap-0.5" title="Curtidas">
+        <Heart className="size-3" />
+        {formatar(post.metrics.likes)}
+      </span>
+      <span className="inline-flex items-center gap-0.5" title="Comentários">
+        <MessageCircle className="size-3" />
+        {formatar(post.metrics.comments)}
+      </span>
+    </span>
+  );
+}
+
 function resumo(post: Post): string {
   const limpa = post.caption.replace(/\s+/g, " ").trim();
   return limpa.length > 40 ? `${limpa.slice(0, 40)}…` : limpa || "(sem legenda)";
@@ -192,12 +312,15 @@ export function PainelDoDia({
   itens,
   visao,
   onVincular,
+  contas = [],
 }: {
   dia: string;
   itens: ItemDoDia[];
   visao: Visao;
   onVincular?: (evento: Evento) => void;
+  contas?: SocialAccount[];
 }) {
+  const redeDaConta = new Map(contas.map((conta) => [conta.id, conta.networkId]));
   const filtrados = filtrarPorVisao(itens, visao);
 
   if (filtrados.length === 0) {
@@ -215,7 +338,14 @@ export function PainelDoDia({
           {item.papel === "evento" ? (
             <CartaoDeEvento evento={item.evento} hora={horaDoItem(item)} onVincular={onVincular} />
           ) : (
-            <CartaoDePeca post={item.post} papel={item.papel} hora={horaDoItem(item)} />
+            <CartaoDePeca
+              post={item.post}
+              papel={item.papel}
+              hora={horaDoItem(item)}
+              redes={item.post.accountIds
+                .map((id) => redeDaConta.get(id))
+                .filter((rede): rede is NetworkId => Boolean(rede))}
+            />
           )}
         </li>
       ))}
@@ -243,7 +373,16 @@ function CartaoDeEvento({
           <span className="text-xs tabular-nums text-muted-foreground">
             {hora ?? "dia inteiro"}
           </span>
-          <span className="font-medium">{evento.titulo}</span>
+          {/* O título é o link, e não o cartão inteiro: o cartão já tem um
+              botão dentro, e link envolvendo botão é HTML inválido — além de
+              roubar o clique de quem só queria vincular uma peça. */}
+          <Link
+            to="/social/evento/$eventoId"
+            params={{ eventoId: evento.id }}
+            className="font-medium hover:text-accent hover:underline"
+          >
+            {evento.titulo}
+          </Link>
           <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
             {TIPO_DE_EVENTO_LABELS[evento.tipo]}
           </span>
@@ -283,10 +422,12 @@ function CartaoDePeca({
   post,
   papel,
   hora,
+  redes,
 }: {
   post: Post;
   papel: ItemDoDia["papel"];
   hora: string | null;
+  redes: NetworkId[];
 }) {
   return (
     <Link
@@ -299,18 +440,22 @@ function CartaoDePeca({
         className={cn("mt-1.5 size-2 shrink-0 rounded-full", COR_DO_PAPEL[papel])}
       />
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-xs tabular-nums text-muted-foreground">{hora ?? "—"}</span>
           <span className="text-xs text-muted-foreground">{NOME_DO_PAPEL[papel]}</span>
+          {post.format !== "a_definir" ? (
+            <span className="rounded border border-border px-1 py-0.5 text-[10px] text-muted-foreground">
+              {NOME_DO_FORMATO[post.format]}
+            </span>
+          ) : null}
+          <PontosDasRedes redes={redes} />
         </div>
         <p className="mt-0.5 line-clamp-2 text-sm">{resumo(post)}</p>
         {post.metrics ? (
           // Os números da peça publicada ficam aqui mesmo: quem olha o dia
           // quer saber como foi, e ir a outra tela para descobrir é atrito.
-          <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-            {post.metrics.reach.toLocaleString("pt-BR")} de alcance ·{" "}
-            {post.metrics.likes.toLocaleString("pt-BR")} curtidas ·{" "}
-            {post.metrics.comments.toLocaleString("pt-BR")} comentários
+          <p className="mt-1 text-xs text-muted-foreground">
+            <NumerosDaPeca post={post} />
           </p>
         ) : null}
       </div>
@@ -335,6 +480,20 @@ function CartaoDePeca({
  * botões também dizem quais movimentos existem, que o arrastar esconde até a
  * pessoa tentar.
  */
+/**
+ * Os formatos oferecidos à pauta, com o nome que se usa falando.
+ *
+ * "Post simples" e "Reels" não são valores do domínio — são como as pessoas
+ * chamam `imagem` e `video`. Escrever "imagem" e "vídeo" num botão faria alguém
+ * procurar onde está o reels.
+ */
+const FORMATOS_DA_PAUTA: { id: FormatoPublicavel; rotulo: string }[] = [
+  { id: "imagem", rotulo: "Post simples" },
+  { id: "carrossel", rotulo: "Carrossel" },
+  { id: "video", rotulo: "Reels / vídeo" },
+  { id: "story", rotulo: "Story" },
+];
+
 export function QuadroDeProducao({
   colunas,
   onMover,
@@ -343,6 +502,9 @@ export function QuadroDeProducao({
   onCriar,
   recolhidas,
   onAlternar,
+  onEscolherFormato,
+  decidindo,
+  contas,
 }: {
   colunas: { fase: FaseDoQuadro; posts: Post[] }[];
   onMover: (postId: string, fase: FaseDoQuadro) => void;
@@ -351,7 +513,18 @@ export function QuadroDeProducao({
   onCriar?: (fase: FaseDoQuadro) => void;
   recolhidas: FaseDoQuadro[];
   onAlternar: (fase: FaseDoQuadro) => void;
+  /** Quando ausente, a pauta mostra o aviso mas não oferece a escolha. */
+  onEscolherFormato?: (postId: string, formato: FormatoPublicavel) => void;
+  decidindo: string | null;
+  /** Para traduzir as contas de destino em redes no cartão. */
+  contas: SocialAccount[];
 }) {
+  const redeDaConta = new Map(contas.map((conta) => [conta.id, conta.networkId]));
+  const redesDe = (post: Post): NetworkId[] =>
+    post.accountIds
+      .map((id) => redeDaConta.get(id))
+      .filter((rede): rede is NetworkId => Boolean(rede));
+
   return (
     <div className="-mx-1 overflow-x-auto px-1 pb-1">
       {/* `items-start` e altura fixa na faixa: com `stretch`, a coluna recolhida
@@ -422,6 +595,19 @@ export function QuadroDeProducao({
               <ul className="mt-2 space-y-2">
                 {coluna.posts.map((post) => (
                   <li key={post.id} className="rounded-lg border border-border p-2.5">
+                    {post.origemEventoId ? (
+                      // A marca de origem é o que o pedido chamou de "ideia da
+                      // agenda": num quadro com pauta de todo tipo, é ela que
+                      // diz que aquilo saiu de um compromisso real.
+                      <Link
+                        to="/social/evento/$eventoId"
+                        params={{ eventoId: post.origemEventoId }}
+                        className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent transition-colors hover:bg-accent/20"
+                      >
+                        <CalendarDays className="size-3" /> Da agenda
+                      </Link>
+                    ) : null}
+
                     <Link
                       to="/social/publicacao/$postId"
                       params={{ postId: post.id }}
@@ -430,7 +616,33 @@ export function QuadroDeProducao({
                       <p className="line-clamp-3 text-xs leading-snug">{resumo(post)}</p>
                     </Link>
 
+                    {post.format === "a_definir" ? (
+                      <div className="mt-2 rounded-lg border border-dashed border-border bg-secondary/40 p-2">
+                        <p className="text-[10px] leading-tight text-muted-foreground">
+                          Esta pauta ainda não tem formato. O que ela vai virar?
+                        </p>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {FORMATOS_DA_PAUTA.map((opcao) => (
+                            <button
+                              key={opcao.id}
+                              type="button"
+                              disabled={!onEscolherFormato || decidindo === post.id}
+                              onClick={() => onEscolherFormato?.(post.id, opcao.id)}
+                              className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] transition-colors hover:border-accent/60 hover:bg-secondary disabled:opacity-50"
+                            >
+                              {opcao.rotulo}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                      {post.format !== "a_definir" ? (
+                        <span className="rounded border border-border px-1 py-0.5">
+                          {NOME_DO_FORMATO[post.format]}
+                        </span>
+                      ) : null}
                       {post.scheduledFor ? (
                         <span className="inline-flex items-center gap-1">
                           <Clock className="size-3" />
@@ -440,11 +652,14 @@ export function QuadroDeProducao({
                           })}
                         </span>
                       ) : null}
-                      <span className="inline-flex items-center gap-1">
-                        <CircleDot className="size-3" />
-                        {post.accountIds.length}
-                      </span>
+                      <PontosDasRedes redes={redesDe(post)} />
                     </div>
+
+                    {post.metrics ? (
+                      <div className="mt-1.5 text-[10px] text-muted-foreground">
+                        <NumerosDaPeca post={post} compacto />
+                      </div>
+                    ) : null}
 
                     <div className="mt-2 flex flex-wrap gap-1">
                       {colunas
@@ -523,19 +738,28 @@ export function SemanaEmLinha({
             </div>
 
             <ul className="mt-1.5 space-y-1">
-              {itens.slice(0, 4).map((item, indice) => (
-                <li key={indice} className="flex items-start gap-1 text-[11px] leading-tight">
-                  <span
-                    aria-hidden
-                    className={cn("mt-1 size-1.5 shrink-0 rounded-full", COR_DO_PAPEL[item.papel])}
-                  />
-                  <span className="min-w-0 truncate">
-                    {item.papel === "evento" ? item.evento.titulo : resumo(item.post)}
-                  </span>
-                </li>
-              ))}
+              {itens.slice(0, 4).map((item, indice) => {
+                const faixa = FAIXA_DO_PAPEL[item.papel];
+                return (
+                  <li
+                    key={indice}
+                    className={cn(
+                      "flex items-center gap-1 overflow-hidden rounded-md py-0.5 pl-0.5 pr-1 text-[11px] leading-tight",
+                      faixa.fundo,
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className={cn("h-3.5 w-1 shrink-0 rounded-full", faixa.barra)}
+                    />
+                    <span className="min-w-0 truncate font-medium">
+                      {item.papel === "evento" ? item.evento.titulo : resumo(item.post)}
+                    </span>
+                  </li>
+                );
+              })}
               {itens.length > 4 ? (
-                <li className="text-[10px] text-muted-foreground">+{itens.length - 4}</li>
+                <li className="pl-1 text-[10px] text-muted-foreground">mais {itens.length - 4}</li>
               ) : null}
               {itens.length === 0 ? <li className="text-[10px] text-muted-foreground">—</li> : null}
             </ul>
