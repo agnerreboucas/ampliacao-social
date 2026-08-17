@@ -91,10 +91,14 @@ import {
 } from "@/lib/social/publico";
 import { medirCobertura, montarMapa } from "@/lib/social/mapa";
 import {
+  atividadePorBloco,
+  blocosDoDia,
+  compararComOPublico,
   horariosPorFormato,
   mapaDeHorarios,
   melhoresBlocos,
   melhoresHorarios,
+  picoDoPublico,
 } from "@/lib/social/horarios";
 import { conversasPorPeca, indexarOrigens, resumirPeca } from "@/lib/social/rastreio";
 import {
@@ -2594,6 +2598,88 @@ export const resumoDeUso = createServerFn({ method: "POST" })
 // ---------------------------------------------------------------------------
 // Painel geral e recomendações
 // ---------------------------------------------------------------------------
+
+/**
+ * O quadro de horários, mídia e público — o resumo que abre no Painel.
+ *
+ * Quatro perguntas que estavam em três telas diferentes, juntas num lugar:
+ * **quando publicar**, **em que formato**, **para quem** e **quando o público
+ * está na rede**. Cada uma leva à tela onde ela se aprofunda; o quadro não
+ * repete a análise inteira, dá a conclusão e o caminho.
+ *
+ * A frase que compara campanha e público é o que faz o quadro valer mais que a
+ * soma das partes: "a campanha rende de manhã, mas o público está na rede à
+ * noite" é uma decisão esperando para ser tomada, e nenhum dos dois números
+ * mostra isso sozinho.
+ */
+export const quadroDeHorarios = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ projectId: z.string().optional(), period: periodSchema }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const contas = await contasPermitidas(data.projectId);
+    const ids = new Set(contas.map((conta) => conta.id));
+    const period = data.period as PeriodKey;
+
+    // Mesmo recorte da tela de Conteúdo: pela data de publicação, para uma peça
+    // de três meses atrás não entrar na média de "últimos 30 dias" só porque
+    // ainda recebe curtida.
+    const dias = PERIOD_DAYS[period];
+    const limite = dias === null ? null : toDayKey(new Date(Date.now() - dias * 86400000));
+
+    const posts = db.posts.filter(
+      (post) =>
+        post.accountIds.some((id) => ids.has(id)) &&
+        post.status === "publicado" &&
+        (limite === null || (post.publishedAt ?? "").slice(0, 10) >= limite),
+    );
+    const inbox = db.inbox.filter((item) => ids.has(item.accountId));
+    const pecas = avaliarPecas(posts, inbox);
+
+    const perfis = contas
+      .map((conta) => db.audience.get(conta.id))
+      .filter((perfil): perfil is AudienceInsight => Boolean(perfil));
+
+    // A atividade do público é somada entre as contas: a pergunta é sobre o
+    // público da campanha, não de um perfil isolado.
+    const porHora = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      activity: perfis.reduce(
+        (soma, perfil) =>
+          soma + (perfil.activityByHour?.find((ponto) => ponto.hour === hour)?.activity ?? 0),
+        0,
+      ),
+    }));
+
+    const blocos = melhoresBlocos(pecas);
+    const formatos = porFormato(pecas).filter((grupo) => grupo.pecas >= 3);
+    const demografia = demografiaDoPublico(perfis);
+    const pico = picoDoPublico(porHora);
+
+    return {
+      period,
+      pecas: pecas.length,
+      /** O melhor bloco do dia, e os dois seguintes. */
+      melhoresBlocos: blocos,
+      /** Os oito blocos, para o comparativo com a atividade do público. */
+      blocosDoDia: blocosDoDia(pecas),
+      /** O formato que mais rende, entre os que têm amostra. */
+      melhorFormato: [...formatos].sort((a, b) => b.contraMedia - a.contraMedia)[0] ?? null,
+      formatos,
+      /** A atividade do público, bloco a bloco. */
+      atividade: atividadePorBloco(porHora),
+      pico,
+      /** Quem é o público: fatia por gênero e a faixa dominante. */
+      publico: {
+        pessoas: demografia.pessoas,
+        contas: demografia.contas,
+        porGenero: demografia.porGenero,
+        faixaDominante: demografia.faixaDominante,
+      },
+      /** A conclusão que sai de cruzar os dois lados. Nula sem os dois. */
+      leitura: compararComOPublico(blocos[0], pico),
+      horariosPorFormato: horariosPorFormato(pecas),
+    };
+  });
 
 /**
  * O quadro completo: cada canal lado a lado, os totais e o que os números

@@ -5,8 +5,10 @@ import {
   BadgeDollarSign,
   CalendarClock,
   ChevronDown,
+  Clock,
   Eye,
   Heart,
+  Lightbulb,
   LoaderCircle,
   MessagesSquare,
   MousePointerClick,
@@ -19,7 +21,12 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { detalharPeriodo, obterPainel, obterPainelGeral } from "@/lib/api/social.functions";
+import {
+  detalharPeriodo,
+  obterPainel,
+  obterPainelGeral,
+  quadroDeHorarios,
+} from "@/lib/api/social.functions";
 import { CartaoDeRede } from "@/components/social/cartao-rede";
 import { Recomendacoes, TabelaDeCanais } from "@/components/social/resumo-dos-canais";
 import { GrowthChart, ReachChart, SplitDonut } from "@/components/social/charts";
@@ -42,9 +49,12 @@ import {
   formatNumber,
   formatPercent,
 } from "@/lib/social/format";
+import type { DesempenhoDoGrupo } from "@/lib/social/conteudo";
+import type { AtividadeDoBloco, HorariosDoFormato, Recomendacao } from "@/lib/social/horarios";
+import { NOME_DO_GENERO } from "@/lib/social/publico";
 import { useSocialSession } from "@/lib/social/session";
 import type { SeriesPoint } from "@/lib/social/analytics";
-import type { PeriodKey } from "@/lib/social/types";
+import type { Genero, PeriodKey } from "@/lib/social/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/social/")({
@@ -68,6 +78,14 @@ function PainelPage() {
   const resumo = useQuery({
     queryKey: ["social", "painel-geral", projectId, period],
     queryFn: () => obterPainelGeral({ data: { projectId: projectId ?? undefined, period } }),
+    enabled: Boolean(projectId),
+  });
+
+  // O quadro de horários e público. Consulta própria pelo mesmo motivo da de
+  // cima: é outro cálculo, e o painel não deve esperar por ela para aparecer.
+  const quadro = useQuery({
+    queryKey: ["social", "quadro-horarios", projectId, period],
+    queryFn: () => quadroDeHorarios({ data: { projectId: projectId ?? undefined, period } }),
     enabled: Boolean(projectId),
   });
 
@@ -214,6 +232,8 @@ function PainelPage() {
               diaSelecionado={pontoAberto?.date ?? null}
             />
           </SectionCard>
+
+          {quadro.data ? <QuadroDeHorarios dado={quadro.data} /> : null}
 
           {pontoAberto ? (
             <DetalhamentoDoDia
@@ -635,6 +655,242 @@ function DetalheDoCanal({ canal }: { canal: CanalDetalhado }) {
         Ver o histórico completo deste canal
         <ArrowRight className="size-3.5" />
       </Link>
+    </div>
+  );
+}
+
+/**
+ * O quadro de horários, mídia e público, no Painel.
+ *
+ * **Fechado, ele responde quatro perguntas em quatro números.** Aberto, mostra
+ * a comparação hora a hora entre quando a campanha publica e quando o público
+ * está na rede — que é a única coisa aqui que não caberia num número só.
+ *
+ * Começa fechado de propósito. O Painel é a tela que alguém abre de passagem;
+ * um bloco de análise sempre expandido empurraria o resto para baixo da dobra
+ * todos os dias por causa de uma leitura que se faz uma vez por semana.
+ *
+ * As duas barras do mapa aberto são a razão de o quadro existir: uma diz onde a
+ * campanha acerta, a outra onde o público está, e o desencontro entre elas é uma
+ * decisão esperando para ser tomada.
+ */
+function QuadroDeHorarios({ dado }: { dado: DadoDoQuadro }) {
+  const [aberto, setAberto] = useState(false);
+
+  const melhor = dado.melhoresBlocos[0];
+  const generoLider = [...dado.publico.porGenero].sort((a, b) => b.pessoas - a.pessoas)[0];
+  const maiorAtividade = Math.max(...dado.atividade.map((bloco) => bloco.atividade), 1);
+  const maiorAlcance = Math.max(...dado.blocosDoDia.map((bloco) => bloco.alcanceMedio), 1);
+
+  return (
+    <SectionCard
+      title="Horários, mídia e público"
+      description="O que os números dizem sobre quando publicar, em que formato e para quem."
+      icon={Clock}
+      actions={
+        <button
+          type="button"
+          onClick={() => setAberto((atual) => !atual)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs transition-colors hover:bg-secondary"
+        >
+          {aberto ? "Recolher" : "Aprofundar"}
+          <ChevronDown className={cn("size-3.5 transition-transform", aberto && "rotate-180")} />
+        </button>
+      }
+    >
+      {dado.pecas === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nenhuma publicação medida no período — sem isso não há horário nem formato a apontar.
+        </p>
+      ) : (
+        <div className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Ficha
+              rotulo="Melhor horário"
+              valor={melhor ? melhor.quando : "Sem padrão ainda"}
+              apoio={
+                melhor
+                  ? `${formatCompact(melhor.alcanceMedio)} de alcance médio · ${melhor.contraMedia >= 0 ? "+" : ""}${Math.round(melhor.contraMedia)}% vs. média`
+                  : "As peças estão espalhadas demais pelos horários"
+              }
+              para="/social/conteudo"
+            />
+            <Ficha
+              rotulo="Formato que rende"
+              valor={dado.melhorFormato ? dado.melhorFormato.rotulo : "Sem padrão ainda"}
+              apoio={
+                dado.melhorFormato
+                  ? `${formatCompact(dado.melhorFormato.alcanceMedio)} de alcance médio · ${dado.melhorFormato.contraMedia >= 0 ? "+" : ""}${Math.round(dado.melhorFormato.contraMedia)}% vs. média`
+                  : "Nenhum formato com três peças no período"
+              }
+              para="/social/conteudo"
+            />
+            <Ficha
+              rotulo="Público"
+              valor={
+                dado.publico.faixaDominante
+                  ? `${dado.publico.faixaDominante} anos`
+                  : "Sem dado da rede"
+              }
+              apoio={
+                generoLider && dado.publico.pessoas > 0
+                  ? `${NOME_DO_GENERO[generoLider.genero]} é ${formatPercent(generoLider.fatia * 100, 0)} · ${formatCompact(dado.publico.pessoas)} seguidores`
+                  : "A rede só devolve o perfil acima de cem seguidores"
+              }
+              para="/social/publico"
+            />
+            <Ficha
+              rotulo="Público na rede"
+              valor={dado.pico ? dado.pico.rotulo : "Sem dado da rede"}
+              apoio={
+                dado.pico
+                  ? `${formatPercent(dado.pico.fatia * 100, 0)} da atividade do dia acontece nesta faixa`
+                  : "Depende do perfil de público da conta conectada"
+              }
+              para="/social/publico"
+            />
+          </div>
+
+          {dado.leitura ? (
+            <p className="flex items-start gap-2 rounded-xl border border-accent/40 bg-accent/5 p-3 text-sm">
+              <Lightbulb className="mt-0.5 size-4 shrink-0 text-accent" />
+              {dado.leitura}
+            </p>
+          ) : null}
+
+          {aberto ? (
+            <div className="space-y-5 border-t border-border pt-5">
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+                  Onde a campanha acerta × onde o público está
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  A barra escura é o alcance médio das peças publicadas naquela faixa. A clara é a
+                  atividade do público, que vem do perfil da rede e não do que publicamos.
+                </p>
+
+                <div className="mt-3 space-y-2">
+                  {dado.atividade.map((bloco) => {
+                    const daCampanha = dado.blocosDoDia.find((item) => item.bloco === bloco.bloco);
+
+                    return (
+                      <div key={bloco.bloco} className="flex items-center gap-3">
+                        <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                          {bloco.rotulo}
+                        </span>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <Trilha
+                            fracao={daCampanha ? daCampanha.alcanceMedio / maiorAlcance : 0}
+                            cor="bg-accent"
+                            titulo={
+                              daCampanha && daCampanha.pecas > 0
+                                ? `${formatCompact(daCampanha.alcanceMedio)} de alcance médio em ${daCampanha.pecas} ${daCampanha.pecas === 1 ? "peça" : "peças"}`
+                                : "Nada publicado nesta faixa"
+                            }
+                          />
+                          <Trilha
+                            fracao={bloco.atividade / maiorAtividade}
+                            cor="bg-accent/35"
+                            titulo={`${formatPercent(bloco.fatia * 100, 0)} da atividade do público`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+                  Melhor horário por tipo de conteúdo
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {dado.horariosPorFormato.map((item) => (
+                    <div key={item.formato} className="rounded-lg border border-border p-2.5">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium">{item.rotulo}</span>
+                        <span className="text-[11px] tabular-nums text-muted-foreground">
+                          {item.pecas}
+                        </span>
+                      </div>
+                      {item.melhores.length === 0 ? (
+                        <p className="mt-1 text-[11px] text-muted-foreground">{item.ressalva}</p>
+                      ) : (
+                        <p className="mt-1 text-sm tabular-nums">
+                          {item.melhores[0].quando}
+                          <span className="block text-[11px] text-muted-foreground">
+                            {formatCompact(item.melhores[0].alcanceMedio)} de alcance médio
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Link
+                to="/social/conteudo"
+                className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+              >
+                Ver a análise completa, com o mapa de calor da semana
+                <ArrowRight className="size-3.5" />
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+type DadoDoQuadro = {
+  pecas: number;
+  melhoresBlocos: Recomendacao[];
+  blocosDoDia: Recomendacao[];
+  melhorFormato: DesempenhoDoGrupo | null;
+  atividade: AtividadeDoBloco[];
+  pico: AtividadeDoBloco | null;
+  publico: {
+    pessoas: number;
+    contas: number;
+    porGenero: { genero: Genero; pessoas: number; fatia: number }[];
+    faixaDominante: string | null;
+  };
+  leitura: string | null;
+  horariosPorFormato: HorariosDoFormato[];
+};
+
+/** Um número do quadro, com o caminho para a tela onde ele se explica. */
+function Ficha({
+  rotulo,
+  valor,
+  apoio,
+  para,
+}: {
+  rotulo: string;
+  valor: string;
+  apoio: string;
+  para: "/social/conteudo" | "/social/publico";
+}) {
+  return (
+    <Link
+      to={para}
+      className="rounded-xl border border-border p-3 transition-colors hover:border-accent/60 hover:bg-secondary/40"
+    >
+      <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{rotulo}</p>
+      <p className="mt-1 text-sm font-medium tabular-nums">{valor}</p>
+      <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">{apoio}</p>
+    </Link>
+  );
+}
+
+function Trilha({ fracao, cor, titulo }: { fracao: number; cor: string; titulo: string }) {
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-secondary" title={titulo}>
+      <div
+        className={cn("h-full rounded-full", cor)}
+        style={{ width: `${Math.max(Math.min(fracao, 1) * 100, fracao > 0 ? 2 : 0)}%` }}
+      />
     </div>
   );
 }

@@ -4,7 +4,11 @@ import { test } from "node:test";
 import type { PecaAvaliada } from "./conteudo.ts";
 import {
   BLOCOS,
+  atividadePorBloco,
   blocoDaHora,
+  blocosDoDia,
+  compararComOPublico,
+  picoDoPublico,
   descreverQuando,
   horariosPorFormato,
   mapaDeHorarios,
@@ -210,4 +214,76 @@ test("a escala de cor usa só as casas em que dá para confiar", () => {
   const mapa = mapaDeHorarios(pecas, { minimoDePecas: 2 });
 
   assert.ok(mapa.maiorAlcance < 10_000, "a casa de uma peça não pode definir a escala");
+});
+
+// --- Quando o público está online -------------------------------------------
+
+/** Uma curva de atividade por hora, como a rede devolve. */
+function atividade(...horas: [number, number][]): { hour: number; activity: number }[] {
+  return Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    activity: horas.find(([h]) => h === hour)?.[1] ?? 0,
+  }));
+}
+
+test("a atividade do público é somada por bloco", () => {
+  const blocos = atividadePorBloco(atividade([19, 30], [20, 40], [9, 10]));
+
+  const noite = blocos.find((bloco) => bloco.bloco === 6);
+  assert.equal(noite?.atividade, 70);
+  assert.equal(Math.round((noite?.fatia ?? 0) * 100), 88);
+});
+
+test("o pico do público é o bloco mais movimentado", () => {
+  const pico = picoDoPublico(atividade([9, 20], [20, 55]));
+
+  assert.equal(pico?.rotulo, "18h–21h");
+});
+
+test("sem dado de público, não há pico", () => {
+  assert.equal(picoDoPublico([]), null);
+  assert.equal(picoDoPublico(atividade()), null);
+});
+
+test("quando campanha e público batem, a frase manda manter", () => {
+  const melhor = melhoresBlocos([peca(1, 19, 8000), peca(2, 20, 8400), peca(3, 19, 7600)], {
+    minimoDePecas: 3,
+  })[0];
+
+  const frase = compararComOPublico(melhor, picoDoPublico(atividade([20, 60])));
+
+  assert.match(frase ?? "", /o mesmo em que o público/);
+  assert.match(frase ?? "", /Manter/);
+});
+
+test("quando divergem, a frase diz onde testar", () => {
+  // É a conclusão que nenhum dos dois números mostra sozinho.
+  const melhor = melhoresBlocos([peca(1, 10, 8000), peca(2, 10, 8400), peca(3, 11, 7600)], {
+    minimoDePecas: 3,
+  })[0];
+
+  const frase = compararComOPublico(melhor, picoDoPublico(atividade([20, 60])));
+
+  assert.match(frase ?? "", /9h–12h/);
+  assert.match(frase ?? "", /18h–21h/);
+  assert.match(frase ?? "", /vale testar/);
+});
+
+test("com meio dado, a frase não é inventada", () => {
+  assert.equal(compararComOPublico(undefined, picoDoPublico(atividade([20, 60]))), null);
+  assert.equal(compararComOPublico(melhoresBlocos([peca(1, 19, 100)])[0], null), null);
+});
+
+test("os oito blocos do dia vêm todos, na ordem do relógio", () => {
+  // Um gráfico com só os três melhores faz as outras cinco faixas parecerem sem
+  // alcance nenhum — e o comparativo com o público fica errado.
+  const blocos = blocosDoDia([peca(1, 19, 8000), peca(2, 10, 3000)]);
+
+  assert.equal(blocos.length, BLOCOS.length);
+  assert.deepEqual(
+    blocos.map((bloco) => bloco.bloco),
+    [0, 1, 2, 3, 4, 5, 6, 7],
+  );
+  assert.equal(blocos[6].alcanceMedio, 8000);
+  assert.equal(blocos[0].pecas, 0);
 });

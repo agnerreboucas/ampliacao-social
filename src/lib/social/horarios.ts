@@ -213,6 +213,25 @@ export function melhoresBlocos(
   pecas: PecaAvaliada[],
   { minimoDePecas = 3, quantidade = 3 }: OpcoesDaRecomendacao = {},
 ): Recomendacao[] {
+  return blocosDoDia(pecas, { minimoDePecas })
+    .filter((casa) => casa.confiavel && casa.pecas > 0)
+    .sort((a, b) => b.alcanceMedio - a.alcanceMedio)
+    .slice(0, quantidade);
+}
+
+/**
+ * Os oito blocos do dia, na ordem do relógio e sem filtro.
+ *
+ * `melhoresBlocos` devolve só o pódio, que é o que vira recomendação. Para
+ * **comparar** o dia inteiro — o alcance da campanha contra a atividade do
+ * público, faixa por faixa — é preciso a régua completa: um gráfico que mostra
+ * apenas os três melhores blocos faz as outras cinco faixas parecerem sem
+ * alcance nenhum, quando o caso pode ser que tenham alcance médio.
+ */
+export function blocosDoDia(
+  pecas: PecaAvaliada[],
+  { minimoDePecas = 3 }: OpcoesDoMapa = {},
+): Recomendacao[] {
   const consideradas = pecas.filter((peca) => peca.hora !== null);
   const alcanceMedio =
     consideradas.length > 0
@@ -224,10 +243,7 @@ export function melhoresBlocos(
     // `dia: -1` marca "todos os dias" — a casa não é de um dia da semana.
     const casa = resumirCasa(-1, bloco.indice, doGrupo, alcanceMedio, minimoDePecas);
     return { ...casa, quando: bloco.rotulo };
-  })
-    .filter((casa) => casa.confiavel && casa.pecas > 0)
-    .sort((a, b) => b.alcanceMedio - a.alcanceMedio)
-    .slice(0, quantidade);
+  });
 }
 
 export type HorariosDoFormato = {
@@ -280,4 +296,76 @@ export function horariosPorFormato(
       };
     })
     .sort((a, b) => b.pecas - a.pecas);
+}
+
+// --- Quando o público está online -------------------------------------------
+
+/**
+ * A atividade do público por bloco do dia.
+ *
+ * É **outro** dado, e é o que fecha a pergunta. `mapaDeHorarios` diz quando as
+ * peças da campanha renderam; isto diz quando as pessoas estão na rede, e vem
+ * do perfil de público que a própria plataforma social devolve — não do que a
+ * gente publicou.
+ *
+ * Cruzar os dois é o que produz a conclusão acionável: "o público está online no
+ * fim da tarde e a campanha publica de manhã" é um problema que nenhum dos dois
+ * números mostra sozinho.
+ */
+export type AtividadeDoBloco = {
+  bloco: number;
+  rotulo: string;
+  /** Soma da atividade das horas do bloco, como a rede a informa. */
+  atividade: number;
+  /** Fatia deste bloco no total do dia, de 0 a 1. */
+  fatia: number;
+};
+
+export function atividadePorBloco(
+  porHora: { hour: number; activity: number }[],
+): AtividadeDoBloco[] {
+  const total = porHora.reduce((soma, ponto) => soma + ponto.activity, 0);
+
+  return BLOCOS.map((bloco) => {
+    const atividade = porHora
+      .filter((ponto) => ponto.hour >= bloco.de && ponto.hour <= bloco.ate)
+      .reduce((soma, ponto) => soma + ponto.activity, 0);
+
+    return {
+      bloco: bloco.indice,
+      rotulo: bloco.rotulo,
+      atividade,
+      fatia: total > 0 ? atividade / total : 0,
+    };
+  });
+}
+
+/** O bloco em que o público está mais na rede. Nulo sem dado nenhum. */
+export function picoDoPublico(
+  porHora: { hour: number; activity: number }[],
+): AtividadeDoBloco | null {
+  const blocos = atividadePorBloco(porHora).filter((bloco) => bloco.atividade > 0);
+  if (blocos.length === 0) return null;
+  return blocos.reduce((maior, bloco) => (bloco.atividade > maior.atividade ? bloco : maior));
+}
+
+/**
+ * A frase que compara o que a campanha faz com o que o público faz.
+ *
+ * Existe porque o par de números não fala por si: quem olha "18h–21h rende
+ * +76%" e "público em pico às 21h–0h" ao lado não conclui nada até alguém
+ * juntar. Devolve `null` quando falta um dos lados — inventar a frase com meio
+ * dado seria pior do que não dizer nada.
+ */
+export function compararComOPublico(
+  melhorDaCampanha: Recomendacao | undefined,
+  pico: AtividadeDoBloco | null,
+): string | null {
+  if (!melhorDaCampanha || !pico) return null;
+
+  if (melhorDaCampanha.bloco === pico.bloco) {
+    return `O melhor horário da campanha é o mesmo em que o público está mais na rede (${pico.rotulo}). Manter.`;
+  }
+
+  return `A campanha rende mais em ${BLOCOS[melhorDaCampanha.bloco].rotulo}, mas o público está mais na rede em ${pico.rotulo} — vale testar publicar ali.`;
 }

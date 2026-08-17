@@ -308,6 +308,41 @@ if ((await campoEmail.count()) === 0) {
     erros.push("o compromisso não ficou clicável na agenda");
   }
 
+  // --- O quadro no painel ---------------------------------------------------
+  //
+  // Fechado ele resume quatro perguntas; aberto, compara o alcance da campanha
+  // com a atividade do público faixa por faixa. As duas coisas são conferidas.
+  await pagina
+    .getByRole("link", { name: /^Painel/i })
+    .first()
+    .click();
+  await pagina.waitForTimeout(3000);
+
+  const noPainel = await pagina.locator("body").innerText();
+  for (const [rotulo, marca] of [
+    ["o quadro de horários, mídia e público", /Horários, mídia e público/i],
+    ["o melhor horário", /Melhor horário/i],
+    ["o formato que rende", /Formato que rende/i],
+    ["quando o público está na rede", /Público na rede/i],
+  ]) {
+    if (marca.test(noPainel)) console.log(`✓ ${rotulo}`);
+    else erros.push(`painel: faltou ${rotulo}`);
+  }
+
+  const aprofundar = pagina.getByRole("button", { name: /Aprofundar/i }).first();
+  if (await aprofundar.count()) {
+    await aprofundar.click();
+    await pagina.waitForTimeout(1200);
+    const aberto = await pagina.locator("body").innerText();
+    if (/Onde a campanha acerta/i.test(aberto) && /Melhor horário por tipo/i.test(aberto)) {
+      console.log("✓ o quadro aprofunda: campanha × público e horário por formato");
+    } else {
+      erros.push("painel: o quadro não abriu o detalhe");
+    }
+  } else {
+    erros.push("painel: não achei o botão de aprofundar o quadro");
+  }
+
   // --- Quando publicar ------------------------------------------------------
   //
   // O mapa de horários é a parte da análise que vira decisão de rotina; se ele
