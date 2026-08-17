@@ -11,12 +11,17 @@ import type { NetworkId, PostFormat } from "./types.ts";
  *
  * Três decisões governam tudo aqui.
  *
- * **Blocos de três horas, não horas cheias.** Sete dias por vinte e quatro
- * horas são cento e sessenta e oito casas. Trinta publicações espalhadas ali
- * dão, no melhor caso, uma peça por casa — e uma peça não é uma média, é um
- * acaso com aparência de conclusão. Oito blocos por dia mantêm a amostra
- * utilizável e correspondem a como a decisão é tomada de verdade: "de manhã ou
- * no fim da tarde?".
+ * **A conclusão sai de blocos de três horas; a inspeção pode ir à hora cheia.**
+ * Sete dias por vinte e quatro horas são cento e sessenta e oito casas. Trinta
+ * publicações espalhadas ali dão, no melhor caso, uma peça por casa — e uma peça
+ * não é uma média, é um acaso com aparência de conclusão. Por isso tudo o que
+ * vira recomendação (`melhoresHorarios`, `melhoresBlocos`, o mapa de calor)
+ * trabalha em oito blocos por dia, que é também como a decisão é tomada de
+ * verdade: "de manhã ou no fim da tarde?". O eixo de hora cheia existe só no
+ * gráfico, para **olhar** — vinte e quatro barras finas mostram se o que rende
+ * é o bloco todo ou uma ponta dele —, e ali cada faixa vem com o tamanho da
+ * amostra do lado, porque uma barra alta feita de uma peça continua sendo uma
+ * peça.
  *
  * **A ordenação é por alcance, não por taxa de engajamento.** Escolher horário
  * é escolher quando a rede vai distribuir a peça; alcance é a medida disso. A
@@ -391,11 +396,72 @@ export type PecaNoTempo = {
   interacoes: number;
   legenda: string;
   publicadoEm: string;
+  /**
+   * O instante já escrito no fuso da campanha — "17/08 09:06".
+   *
+   * Vem pronto do servidor porque `publicadoEm` é um instante absoluto, e
+   * formatá-lo no navegador o traduziria para o relógio de quem abriu a tela.
+   * O gráfico agrupa por hora de São Paulo; a lista precisa dizer a mesma hora.
+   */
+  quando: string;
 };
 
-export type EixoDoQuadro = "horario" | "dia";
+/**
+ * `horario` são os oito blocos de três horas; `hora` são as vinte e quatro horas
+ * cheias.
+ *
+ * Os dois existem porque respondem a perguntas diferentes. O bloco é a régua de
+ * **decisão** — ninguém agenda "às 14h em ponto porque 14h rende mais", agenda
+ * "no começo da tarde" —, e com poucas peças é a única régua com amostra. A hora
+ * cheia é a régua de **inspeção**: quando alguém desconfia que o pico está numa
+ * ponta do bloco, só a barra fina mostra. Deixar as duas disponíveis custa uma
+ * linha aqui e evita a escolha errada nos dois casos.
+ */
+export type EixoDoQuadro = "horario" | "hora" | "dia";
 export type RecorteDoQuadro = "formato" | "rede";
 export type MetricaDoQuadro = "alcance" | "interacoes";
+
+/** Quantas faixas cada eixo tem — a grade completa, inclusive as vazias. */
+function faixasDoEixo(eixo: EixoDoQuadro): { chave: string; rotulo: string }[] {
+  if (eixo === "horario") {
+    return BLOCOS.map((bloco) => ({ chave: `h-${bloco.indice}`, rotulo: bloco.rotulo }));
+  }
+  if (eixo === "hora") {
+    // As vinte e quatro horas, sempre todas. Uma grade completa é o que permite
+    // ler o dia como uma curva; mostrar só as horas com publicação faria 9h e
+    // 19h ficarem lado a lado e o gráfico contaria uma história falsa.
+    return Array.from({ length: 24 }, (_, hora) => ({
+      chave: `c-${hora}`,
+      rotulo: `${hora}h`,
+    }));
+  }
+  return DIAS_CURTOS.map((dia, indice) => ({ chave: `d-${indice}`, rotulo: dia }));
+}
+
+function naFaixa(peca: PecaNoTempo, eixo: EixoDoQuadro, indice: number): boolean {
+  if (eixo === "horario") return blocoDaHora(peca.hora).indice === indice;
+  if (eixo === "hora") return peca.hora === indice;
+  return peca.dia === indice;
+}
+
+/**
+ * Deixa passar só as peças de uma rede.
+ *
+ * `null` (ou "todas") significa a campanha inteira, que é o padrão: a soma de
+ * todas as redes é a leitura mais útil na maior parte do tempo, e quem quer o
+ * corte por canal pede.
+ */
+export function pecasDaRede(pecas: PecaNoTempo[], rede: NetworkId | null): PecaNoTempo[] {
+  if (!rede) return pecas;
+  return pecas.filter((peca) => peca.redes.includes(rede));
+}
+
+/** As redes que aparecem nas peças, para montar o seletor sem opções mortas. */
+export function redesPresentes(pecas: PecaNoTempo[]): NetworkId[] {
+  const vistas = new Set<NetworkId>();
+  for (const peca of pecas) for (const rede of peca.redes) vistas.add(rede);
+  return [...vistas];
+}
 
 export type FatiaDaBarra = { chave: string; valor: number };
 
@@ -423,6 +489,12 @@ export type BarraDoQuadro = {
  * ela precisa ser, porque a rede não devolve alcance por canal para uma peça só
  * que foi para três lugares. Somar o alcance inteiro em cada rede daria uma
  * barra maior que o alcance real, que é o erro pior.
+ *
+ * **Com uma rede escolhida, a barra é só a parte dela.** Filtrar por Instagram
+ * mantém as peças que saíram no Instagram, mas cada uma entra apenas com a sua
+ * parcela de Instagram — não com o alcance inteiro de uma peça que também foi
+ * para o Facebook. Sem isso, escolher uma rede aumentaria o número em vez de
+ * recortá-lo.
  */
 export function barrasDoQuadro(
   pecas: PecaNoTempo[],
@@ -430,22 +502,26 @@ export function barrasDoQuadro(
     eixo,
     recorte,
     metrica = "alcance",
-  }: { eixo: EixoDoQuadro; recorte: RecorteDoQuadro; metrica?: MetricaDoQuadro },
+    rede = null,
+  }: {
+    eixo: EixoDoQuadro;
+    recorte: RecorteDoQuadro;
+    metrica?: MetricaDoQuadro;
+    rede?: NetworkId | null;
+  },
 ): BarraDoQuadro[] {
-  const faixas =
-    eixo === "horario"
-      ? BLOCOS.map((bloco) => ({ chave: `h-${bloco.indice}`, rotulo: bloco.rotulo }))
-      : DIAS_CURTOS.map((dia, indice) => ({ chave: `d-${indice}`, rotulo: dia }));
-
-  const daFaixa = (peca: PecaNoTempo, indice: number) =>
-    eixo === "horario" ? blocoDaHora(peca.hora).indice === indice : peca.dia === indice;
+  const faixas = faixasDoEixo(eixo);
+  const consideradas = pecasDaRede(pecas, rede);
 
   return faixas.map((faixa, indice) => {
-    const doGrupo = pecas.filter((peca) => daFaixa(peca, indice));
+    const doGrupo = consideradas.filter((peca) => naFaixa(peca, eixo, indice));
     const soma = new Map<string, number>();
 
     for (const peca of doGrupo) {
-      const valor = metrica === "alcance" ? peca.alcance : peca.interacoes;
+      const bruto = metrica === "alcance" ? peca.alcance : peca.interacoes;
+      // Com rede escolhida, só a parcela dela conta — a peça multi-rede não
+      // pode entrar inteira num recorte de um canal só.
+      const valor = rede && peca.redes.length > 0 ? bruto / peca.redes.length : bruto;
 
       if (recorte === "formato") {
         soma.set(peca.formato, (soma.get(peca.formato) ?? 0) + valor);
@@ -457,9 +533,14 @@ export function barrasDoQuadro(
         continue;
       }
 
+      if (rede) {
+        soma.set(rede, (soma.get(rede) ?? 0) + valor);
+        continue;
+      }
+
       const parcela = valor / peca.redes.length;
-      for (const rede of peca.redes) {
-        soma.set(rede, (soma.get(rede) ?? 0) + parcela);
+      for (const outra of peca.redes) {
+        soma.set(outra, (soma.get(outra) ?? 0) + parcela);
       }
     }
 
@@ -476,12 +557,18 @@ export function barrasDoQuadro(
 }
 
 /** As categorias presentes nos dados, para a legenda e a ordem das pilhas. */
-export function categoriasDoQuadro(pecas: PecaNoTempo[], recorte: RecorteDoQuadro): string[] {
+export function categoriasDoQuadro(
+  pecas: PecaNoTempo[],
+  recorte: RecorteDoQuadro,
+  rede: NetworkId | null = null,
+): string[] {
+  const consideradas = pecasDaRede(pecas, rede);
   const vistas = new Set<string>();
-  for (const peca of pecas) {
+  for (const peca of consideradas) {
     if (recorte === "formato") vistas.add(peca.formato);
+    else if (rede) vistas.add(rede);
     else if (peca.redes.length === 0) vistas.add("sem_rede");
-    else for (const rede of peca.redes) vistas.add(rede);
+    else for (const outra of peca.redes) vistas.add(outra);
   }
   return [...vistas];
 }
@@ -492,20 +579,111 @@ export function categoriasDoQuadro(pecas: PecaNoTempo[], recorte: RecorteDoQuadr
  * Ordenadas por alcance: quem clica numa barra alta quer saber qual peça a
  * levantou, e essa é a primeira da lista.
  */
-export function pecasDaBarra(pecas: PecaNoTempo[], chave: string): PecaNoTempo[] {
-  const [tipo, valor] = chave.split("-");
-  const indice = Number(valor);
+export function pecasDaBarra(
+  pecas: PecaNoTempo[],
+  chave: string,
+  rede: NetworkId | null = null,
+): PecaNoTempo[] {
+  const eixo = eixoDaChave(chave);
+  const indice = Number(chave.split("-")[1]);
 
-  return pecas
-    .filter((peca) =>
-      tipo === "h" ? blocoDaHora(peca.hora).indice === indice : peca.dia === indice,
-    )
+  return pecasDaRede(pecas, rede)
+    .filter((peca) => naFaixa(peca, eixo, indice))
     .sort((a, b) => b.alcance - a.alcance);
+}
+
+function eixoDaChave(chave: string): EixoDoQuadro {
+  const tipo = chave.split("-")[0];
+  if (tipo === "h") return "horario";
+  if (tipo === "c") return "hora";
+  return "dia";
 }
 
 /** O rótulo de uma barra, por extenso, para o cabeçalho do painel. */
 export function rotuloDaBarra(chave: string): string {
-  const [tipo, valor] = chave.split("-");
-  const indice = Number(valor);
-  return tipo === "h" ? BLOCOS[indice].rotulo : DIAS_LONGOS[indice];
+  const indice = Number(chave.split("-")[1]);
+  const eixo = eixoDaChave(chave);
+  if (eixo === "horario") return BLOCOS[indice].rotulo;
+  if (eixo === "hora")
+    return `${String(indice).padStart(2, "0")}h às ${String(indice).padStart(2, "0")}h59`;
+  return DIAS_LONGOS[indice];
+}
+
+/**
+ * O que a plataforma sabe sobre uma faixa de tempo, para o painel do clique.
+ *
+ * Quem clica numa barra não quer só a lista de peças: quer saber se aquela hora
+ * é boa. Isso é a comparação com a média — o mesmo `contraMedia` do mapa de
+ * calor — mais os dias em que se publicou naquela hora, porque "rende às 19h"
+ * costuma ser na verdade "rende às 19h de terça".
+ *
+ * `confiavel` é falso com menos de duas peças, e a tela precisa respeitar isso:
+ * com uma peça, o painel descreve o que aconteceu e não conclui nada.
+ */
+export type DetalheDaFaixa = {
+  chave: string;
+  rotulo: string;
+  pecas: PecaNoTempo[];
+  alcance: number;
+  interacoes: number;
+  alcanceMedio: number;
+  /** Quanto o alcance médio da faixa fica acima da média geral, em %. */
+  contraMedia: number;
+  confiavel: boolean;
+  /** Dias da semana em que houve publicação nesta faixa, do mais rendoso. */
+  dias: { dia: number; rotulo: string; pecas: number; alcance: number }[];
+  /** Formatos presentes na faixa, do mais rendoso. */
+  formatos: { formato: PostFormat; rotulo: string; pecas: number; alcance: number }[];
+};
+
+export function detalharFaixa(
+  pecas: PecaNoTempo[],
+  chave: string,
+  { rede = null, minimoDePecas = 2 }: { rede?: NetworkId | null; minimoDePecas?: number } = {},
+): DetalheDaFaixa {
+  const universo = pecasDaRede(pecas, rede);
+  const doGrupo = pecasDaBarra(pecas, chave, rede);
+
+  const mediaGeral =
+    universo.length > 0
+      ? universo.reduce((soma, peca) => soma + peca.alcance, 0) / universo.length
+      : 0;
+  const alcance = doGrupo.reduce((soma, peca) => soma + peca.alcance, 0);
+  const alcanceMedio = doGrupo.length > 0 ? alcance / doGrupo.length : 0;
+
+  const porDia = new Map<number, PecaNoTempo[]>();
+  const porFormato = new Map<PostFormat, PecaNoTempo[]>();
+  for (const peca of doGrupo) {
+    porDia.set(peca.dia, [...(porDia.get(peca.dia) ?? []), peca]);
+    porFormato.set(peca.formato, [...(porFormato.get(peca.formato) ?? []), peca]);
+  }
+
+  const somaDe = (lista: PecaNoTempo[]) => lista.reduce((soma, peca) => soma + peca.alcance, 0);
+
+  return {
+    chave,
+    rotulo: rotuloDaBarra(chave),
+    pecas: doGrupo,
+    alcance,
+    interacoes: doGrupo.reduce((soma, peca) => soma + peca.interacoes, 0),
+    alcanceMedio,
+    contraMedia: mediaGeral > 0 && doGrupo.length > 0 ? (alcanceMedio / mediaGeral - 1) * 100 : 0,
+    confiavel: doGrupo.length >= minimoDePecas,
+    dias: [...porDia.entries()]
+      .map(([dia, lista]) => ({
+        dia,
+        rotulo: DIAS_LONGOS[dia],
+        pecas: lista.length,
+        alcance: somaDe(lista),
+      }))
+      .sort((a, b) => b.alcance - a.alcance),
+    formatos: [...porFormato.entries()]
+      .map(([formato, lista]) => ({
+        formato,
+        rotulo: NOME_DO_FORMATO[formato],
+        pecas: lista.length,
+        alcance: somaDe(lista),
+      }))
+      .sort((a, b) => b.alcance - a.alcance),
+  };
 }

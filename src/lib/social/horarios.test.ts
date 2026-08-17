@@ -10,6 +10,8 @@ import {
   blocosDoDia,
   categoriasDoQuadro,
   pecasDaBarra,
+  redesPresentes,
+  detalharFaixa,
   rotuloDaBarra,
   compararComOPublico,
   picoDoPublico,
@@ -312,6 +314,7 @@ function noTempo(
     interacoes: Math.round(alcance * 0.05),
     legenda: "legenda",
     publicadoEm: "2026-08-17T12:00:00",
+    quando: `17/08 ${String(hora).padStart(2, "0")}:00`,
   };
 }
 
@@ -415,4 +418,145 @@ test("clicar na barra devolve as peças dela, da maior para a menor", () => {
 test("o rótulo da barra é lido por gente", () => {
   assert.equal(rotuloDaBarra("h-6"), "18h–21h");
   assert.equal(rotuloDaBarra("d-4"), "quinta-feira");
+});
+
+// --- A barra fina de hora cheia e o corte por rede ---------------------------
+
+test("o eixo de hora tem as vinte e quatro horas, inclusive as sem publicação", () => {
+  const barras = barrasDoQuadro([noTempo(2, 19, 5000, "imagem", ["instagram"])], {
+    eixo: "hora",
+    recorte: "formato",
+  });
+
+  assert.equal(barras.length, 24);
+  assert.equal(barras[0].rotulo, "0h");
+  assert.equal(barras[23].rotulo, "23h");
+  // A grade completa é o ponto: as horas vazias precisam existir para o dia ser
+  // lido como uma curva.
+  assert.equal(barras[18].total, 0);
+  assert.equal(barras[19].total, 5000);
+});
+
+test("a hora cheia separa o que o bloco de três horas juntava", () => {
+  const pecas = [
+    noTempo(2, 18, 1000, "imagem", ["instagram"]),
+    noTempo(2, 20, 9000, "video", ["instagram"]),
+  ];
+
+  const emBloco = barrasDoQuadro(pecas, { eixo: "horario", recorte: "formato" })[6];
+  assert.equal(emBloco.total, 10_000);
+
+  const porHora = barrasDoQuadro(pecas, { eixo: "hora", recorte: "formato" });
+  assert.equal(porHora[18].total, 1000);
+  assert.equal(porHora[20].total, 9000);
+  assert.equal(porHora[19].total, 0);
+});
+
+test("escolher uma rede recorta o número, nunca o aumenta", () => {
+  // Uma peça em duas redes: metade do alcance é de cada uma.
+  const pecas = [noTempo(2, 19, 8000, "imagem", ["instagram", "facebook"])];
+
+  const tudo = barrasDoQuadro(pecas, { eixo: "hora", recorte: "rede" })[19];
+  assert.equal(tudo.total, 8000);
+
+  const soInstagram = barrasDoQuadro(pecas, {
+    eixo: "hora",
+    recorte: "rede",
+    rede: "instagram",
+  })[19];
+  assert.equal(soInstagram.total, 4000);
+  assert.equal(soInstagram.fatias.length, 1);
+  assert.equal(soInstagram.fatias[0].chave, "instagram");
+});
+
+test("a rede escolhida esconde as peças que não saíram nela", () => {
+  const pecas = [
+    noTempo(2, 19, 5000, "imagem", ["instagram"]),
+    noTempo(2, 19, 3000, "video", ["tiktok"]),
+  ];
+
+  const soTiktok = barrasDoQuadro(pecas, {
+    eixo: "hora",
+    recorte: "formato",
+    rede: "tiktok",
+  })[19];
+
+  assert.equal(soTiktok.pecas, 1);
+  assert.equal(soTiktok.total, 3000);
+  assert.equal(soTiktok.fatias[0].chave, "video");
+});
+
+test("o seletor de rede só oferece as redes que têm peça", () => {
+  const pecas = [
+    noTempo(2, 19, 5000, "imagem", ["instagram"]),
+    noTempo(3, 10, 3000, "video", ["instagram", "facebook"]),
+  ];
+
+  assert.deepEqual(redesPresentes(pecas).sort(), ["facebook", "instagram"]);
+});
+
+test("o rótulo da hora cheia diz a hora inteira, não um instante", () => {
+  // "19h" sozinho se lê como "às sete da noite em ponto"; a barra é a hora toda.
+  assert.equal(rotuloDaBarra("c-19"), "19h às 19h59");
+  assert.equal(rotuloDaBarra("c-0"), "00h às 00h59");
+});
+
+test("clicar numa hora devolve só as peças daquela hora", () => {
+  const pecas = [
+    noTempo(2, 19, 5000, "imagem", ["instagram"]),
+    noTempo(4, 19, 8000, "video", ["instagram"]),
+    noTempo(4, 20, 1000, "imagem", ["instagram"]),
+  ];
+
+  const das19 = pecasDaBarra(pecas, "c-19");
+  assert.equal(das19.length, 2);
+  assert.equal(das19[0].alcance, 8000);
+});
+
+test("o detalhe da hora compara com a média e diz em que dias ela rendeu", () => {
+  const pecas = [
+    noTempo(2, 19, 6000, "imagem", ["instagram"]),
+    noTempo(4, 19, 6000, "video", ["instagram"]),
+    noTempo(1, 9, 2000, "imagem", ["instagram"]),
+    noTempo(3, 9, 2000, "imagem", ["instagram"]),
+  ];
+
+  const detalhe = detalharFaixa(pecas, "c-19");
+
+  assert.equal(detalhe.rotulo, "19h às 19h59");
+  assert.equal(detalhe.pecas.length, 2);
+  assert.equal(detalhe.alcance, 12_000);
+  assert.equal(detalhe.alcanceMedio, 6000);
+  // Média geral 4.000; a faixa está 50% acima.
+  assert.equal(Math.round(detalhe.contraMedia), 50);
+  assert.equal(detalhe.confiavel, true);
+  assert.deepEqual(
+    detalhe.dias.map((item) => item.rotulo),
+    ["terça-feira", "quinta-feira"],
+  );
+  assert.equal(detalhe.formatos.length, 2);
+});
+
+test("uma peça só na faixa descreve, mas não conclui", () => {
+  const pecas = [
+    noTempo(2, 19, 9000, "imagem", ["instagram"]),
+    noTempo(1, 9, 1000, "imagem", ["instagram"]),
+  ];
+
+  const detalhe = detalharFaixa(pecas, "c-19");
+
+  assert.equal(detalhe.pecas.length, 1);
+  assert.equal(detalhe.alcance, 9000);
+  // O número aparece — o que não pode é a tela chamar isso de padrão.
+  assert.equal(detalhe.confiavel, false);
+});
+
+test("faixa sem peça nenhuma não inventa comparação", () => {
+  const detalhe = detalharFaixa([noTempo(2, 19, 9000, "imagem", ["instagram"])], "c-3");
+
+  assert.equal(detalhe.pecas.length, 0);
+  assert.equal(detalhe.alcance, 0);
+  assert.equal(detalhe.contraMedia, 0);
+  assert.equal(detalhe.confiavel, false);
+  assert.deepEqual(detalhe.dias, []);
 });

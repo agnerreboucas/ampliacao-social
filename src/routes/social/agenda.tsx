@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, Upload } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, Send, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -36,8 +36,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PostEditorDialog } from "@/components/social/post-editor";
 import {
   chaveDoDia,
+  esperandoAprovacao,
   itensDoDia,
   lerDia,
   montarQuadro,
@@ -59,15 +61,24 @@ export const Route = createFileRoute("/social/agenda")({
 const VISOES: { id: Visao; rotulo: string; explica: string }[] = [
   { id: "producao", rotulo: "Produção", explica: "Em que pé está cada peça." },
   { id: "publicacao", rotulo: "Publicação", explica: "O que vai ao ar e quando." },
+  {
+    id: "aprovacao",
+    rotulo: "Aprovações",
+    explica: "Só o que está esperando um sim, no dia em que vai ao ar.",
+  },
   { id: "tudo", rotulo: "Tudo", explica: "A semana como ela é: compromisso, produção e entrega." },
 ];
 
 /**
  * A agenda da campanha.
  *
- * Três visões do mesmo material, porque são três perguntas diferentes: em que
- * pé está o trabalho, o que vai ao ar, e como é a semana. Forçá-las numa tela
- * só faria a terceira comer as duas primeiras.
+ * Quatro visões do mesmo material, porque são quatro perguntas diferentes: em
+ * que pé está o trabalho, o que vai ao ar, o que espera aprovação, e como é a
+ * semana. Forçá-las numa tela só faria a última comer as outras três.
+ *
+ * A visão de aprovações é a que tem dono: ela existe para quem dá o "sim" abrir
+ * a plataforma e ver, no calendário, só o que trava se ninguém agir — e ver
+ * **quando** cada coisa trava, que é o que uma lista não mostra.
  *
  * O dia aberto fica **embaixo do calendário**, e não numa janela sobreposta. É
  * o que permite clicar de um dia para o outro comparando — numa janela, cada
@@ -84,6 +95,10 @@ function AgendaPage() {
   const [diaAberto, setDiaAberto] = useState<string | null>(() => chaveDoDia(new Date()));
   const [editando, setEditando] = useState<Evento | "novo" | null>(null);
   const [importando, setImportando] = useState(false);
+  // O dia em que a pessoa clicou no "+": vira a pergunta "compromisso ou
+  // publicação?" e depois a data que os dois formulários já vêm preenchidos.
+  const [criandoNoDia, setCriandoNoDia] = useState<string | null>(null);
+  const [publicandoNoDia, setPublicandoNoDia] = useState<string | null>(null);
   // Colunas vazias começam recolhidas: o que não tem nada não deveria ocupar um
   // sexto da largura, e a faixa fina continua dizendo que a etapa existe.
   const [recolhidas, setRecolhidas] = useState<FaseDoQuadro[]>([]);
@@ -110,6 +125,12 @@ function AgendaPage() {
   const agendadasNoMes = posts.filter(
     (post) => post.status === "agendado" && noMes(post.scheduledFor),
   );
+
+  // A fila de aprovação é do projeto inteiro, não do mês: uma peça que vence
+  // semana que vem não pode desaparecer da contagem porque o calendário está
+  // parado em agosto.
+  const aguardando = esperandoAprovacao(posts);
+  const proximaAAprovar = aguardando[0]?.scheduledFor ?? null;
 
   // A primeira montagem com dados decide o que já nasce recolhido; depois disso
   // quem manda é o clique da pessoa, e reavaliar apagaria a escolha dela.
@@ -314,6 +335,22 @@ function AgendaPage() {
             </p>
           ) : null}
 
+          {visao === "aprovacao" ? (
+            <p className="mb-2 text-sm text-muted-foreground">
+              {aguardando.length === 0 ? (
+                "Nada esperando aprovação. O calendário abaixo fica vazio quando não há fila — e é assim que ele diz que está tudo em dia."
+              ) : (
+                <>
+                  <strong className="text-foreground">{aguardando.length}</strong>{" "}
+                  {aguardando.length === 1 ? "peça espera" : "peças esperam"} aprovação
+                  {proximaAAprovar
+                    ? `. A mais próxima sai em ${new Date(proximaAAprovar).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}.`
+                    : "."}
+                </>
+              )}
+            </p>
+          ) : null}
+
           {formato === "mes" ? (
             <CalendarioDoMes
               ano={referencia.getFullYear()}
@@ -323,6 +360,14 @@ function AgendaPage() {
               visao={visao}
               diaAberto={diaAberto}
               onAbrirDia={setDiaAberto}
+              onCriarNoDia={
+                podeEditar
+                  ? (dia) => {
+                      setDiaAberto(dia);
+                      setCriandoNoDia(dia);
+                    }
+                  : undefined
+              }
             />
           ) : (
             <SemanaEmLinha
@@ -358,6 +403,8 @@ function AgendaPage() {
             itens={itensDoDia(diaAberto, eventos, posts)}
             visao={visao}
             onVincular={podeEditar ? (evento) => setEditando(evento) : undefined}
+            onNovoCompromisso={podeEditar ? () => setEditando("novo") : undefined}
+            onNovaPublicacao={podeEditar ? () => setPublicandoNoDia(diaAberto) : undefined}
           />
         </SectionCard>
       ) : null}
@@ -433,6 +480,38 @@ function AgendaPage() {
         />
       ) : null}
 
+      {criandoNoDia ? (
+        <EscolhaDoQueCriar
+          dia={criandoNoDia}
+          onFechar={() => setCriandoNoDia(null)}
+          onCompromisso={() => {
+            setCriandoNoDia(null);
+            setEditando("novo");
+          }}
+          onPublicacao={() => {
+            setPublicandoNoDia(criandoNoDia);
+            setCriandoNoDia(null);
+          }}
+        />
+      ) : null}
+
+      {publicandoNoDia && session ? (
+        // Montado só quando abre: o editor lê o dia sugerido no estado inicial,
+        // e um diálogo que fica montado guardaria o dia do primeiro clique.
+        <PostEditorDialog
+          open
+          onOpenChange={(aberto) => (aberto ? null : setPublicandoNoDia(null))}
+          accounts={contas}
+          projectId={projectId ?? ""}
+          userId={session.user.id}
+          diaSugerido={publicandoNoDia}
+          onCreated={() => {
+            setPublicandoNoDia(null);
+            invalidar();
+          }}
+        />
+      ) : null}
+
       {importando ? (
         <DialogoDeImportacao
           projectId={projectId ?? ""}
@@ -444,6 +523,64 @@ function AgendaPage() {
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * "Compromisso ou publicação?", perguntado no dia em que se clicou.
+ *
+ * O calendário guarda duas coisas de naturezas diferentes — o que a campanha
+ * **faz** e o que a campanha **publica** — e o clique num dia vazio não diz qual
+ * das duas a pessoa quer. Perguntar em uma tela de duas opções custa um clique e
+ * evita o erro de abrir o formulário errado, que custa fechar, procurar o outro
+ * botão e digitar a data de novo.
+ */
+function EscolhaDoQueCriar({
+  dia,
+  onFechar,
+  onCompromisso,
+  onPublicacao,
+}: {
+  dia: string;
+  onFechar: () => void;
+  onCompromisso: () => void;
+  onPublicacao: () => void;
+}) {
+  return (
+    <Dialog open onOpenChange={(aberto) => (aberto ? null : onFechar())}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{tituloDoDia(dia)}</DialogTitle>
+          <DialogDescription>O que você quer criar neste dia?</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onCompromisso}
+            className="rounded-xl border border-border p-4 text-left transition-colors hover:border-accent/60 hover:bg-secondary/50"
+          >
+            <CalendarDays className="size-5 text-accent" />
+            <span className="mt-2 block text-sm font-medium">Compromisso</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Agenda, gravação, prazo ou reunião interna.
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onPublicacao}
+            className="rounded-xl border border-border p-4 text-left transition-colors hover:border-accent/60 hover:bg-secondary/50"
+          >
+            <Send className="size-5 text-accent" />
+            <span className="mt-2 block text-sm font-medium">Publicação</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Uma peça para as redes, já agendada para este dia.
+            </span>
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

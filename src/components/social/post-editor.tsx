@@ -46,6 +46,7 @@ export function PostEditorDialog({
   projectId,
   userId,
   onCreated,
+  diaSugerido,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,13 +54,22 @@ export function PostEditorDialog({
   projectId: string;
   userId: string;
   onCreated: () => void;
+  /**
+   * O dia que já estava escolhido quando o editor abriu — vem do calendário.
+   *
+   * Chega como `AAAA-MM-DD` e vira `AAAA-MM-DDT09:00`. A hora é um palpite, e é
+   * de propósito: quem clicou num dia escolheu o dia, não o horário, e um campo
+   * de agendamento vazio obrigaria a redigitar a data que a pessoa acabou de
+   * apontar com o dedo. Nove da manhã é editável em dois cliques.
+   */
+  diaSugerido?: string;
 }) {
   const [format, setFormat] = useState<FormatoPublicavel>("imagem");
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState<PostMedia>(MIDIA_PADRAO.imagem);
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [requiresApproval, setRequiresApproval] = useState(true);
-  const [scheduledFor, setScheduledFor] = useState("");
+  const [scheduledFor, setScheduledFor] = useState(diaSugerido ? `${diaSugerido}T09:00` : "");
   const [erro, setErro] = useState<string | null>(null);
 
   const selectedAccounts = accounts.filter((account) => accountIds.includes(account.id));

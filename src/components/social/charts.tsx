@@ -415,7 +415,13 @@ export function QuadroDeBarras({
   onSelecionar,
   selecionada,
 }: {
-  barras: { chave: string; rotulo: string; total: number; pecas: number }[];
+  barras: {
+    chave: string;
+    rotulo: string;
+    total: number;
+    pecas: number;
+    fatias: { chave: string; valor: number }[];
+  }[];
   categorias: string[];
   corDaCategoria: (chave: string) => string;
   rotuloDaCategoria: (chave: string) => string;
@@ -426,10 +432,24 @@ export function QuadroDeBarras({
   const clicavel = Boolean(onSelecionar);
   const opacidade = (chave: string) => (!selecionada || chave === selecionada ? 1 : 0.3);
 
+  /**
+   * As fatias viram campos da própria linha, com prefixo.
+   *
+   * O recharts precisa de um `dataKey` por barra empilhada. Passar uma função
+   * funciona, mas a biblioteca usa o `dataKey` como chave de reconciliação do
+   * React — e duas funções viram a mesma string, o que produz chaves repetidas e
+   * o aviso que vem junto. Um campo por categoria resolve na origem. O prefixo
+   * evita que uma categoria chamada "total" ou "pecas" atropele um campo real.
+   */
+  const dados = barras.map((barra) => ({
+    ...barra,
+    ...Object.fromEntries(barra.fatias.map((fatia) => [`v:${fatia.chave}`, fatia.valor])),
+  }));
+
   return (
     <ChartFrame height={height}>
       <BarChart
-        data={barras}
+        data={dados}
         margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
         onClick={(estado) => {
           if (!onSelecionar) return;
@@ -445,7 +465,11 @@ export function QuadroDeBarras({
           fontSize={11}
           tickLine={false}
           axisLine={false}
-          interval={0}
+          // Oito faixas ou sete dias cabem todos rotulados. Vinte e quatro horas
+          // não cabem — os rótulos se sobrepõem e nenhum se lê. Pular um em cada
+          // dois mantém a régua legível; as vinte e quatro barras continuam
+          // desenhadas, que é o que a curva do dia precisa.
+          interval={barras.length > 12 ? 1 : 0}
         />
         <YAxis
           stroke={AXIS_COLOR}
@@ -459,9 +483,7 @@ export function QuadroDeBarras({
         {categorias.map((categoria, indice) => (
           <Bar
             key={categoria}
-            dataKey={(barra: { fatias: { chave: string; valor: number }[] }) =>
-              barra.fatias.find((fatia) => fatia.chave === categoria)?.valor ?? 0
-            }
+            dataKey={`v:${categoria}`}
             name={rotuloDaCategoria(categoria)}
             stackId="quadro"
             // Só a última fatia arredonda o topo; arredondar todas desenharia

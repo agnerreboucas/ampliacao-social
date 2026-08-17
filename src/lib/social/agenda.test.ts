@@ -3,10 +3,12 @@ import { test } from "node:test";
 
 import {
   chaveDoDia,
+  esperandoAprovacao,
   eventosSemPauta,
   gradeDoMes,
   horaDoItem,
   itensDoDia,
+  marcaDaPeca,
   montarQuadro,
   motivoParaNaoAvancar,
   pautaDoEvento,
@@ -372,4 +374,48 @@ test("pauta sem formato pode virar rascunho — é onde se decide", () => {
 
 test("com formato escolhido, nada trava", () => {
   assert.equal(motivoParaNaoAvancar(post({ format: "carrossel" }), "agendado"), null);
+});
+
+// --- As marcações do calendário ---------------------------------------------
+
+test("a cor da peça diz o que exige ação, não a fase interna", () => {
+  assert.equal(marcaDaPeca(post({ status: "aguardando_aprovacao" })), "aprovar");
+  assert.equal(marcaDaPeca(post({ status: "aprovado" })), "aguardando");
+  assert.equal(marcaDaPeca(post({ status: "agendado" })), "aguardando");
+  assert.equal(marcaDaPeca(post({ status: "publicado" })), "publicada");
+  assert.equal(marcaDaPeca(post({ status: "ideia" })), "rascunho");
+  assert.equal(marcaDaPeca(post({ status: "rascunho" })), "rascunho");
+});
+
+test("agendado e aprovado compartilham a marca, porque exigem a mesma coisa", () => {
+  // Nada — as duas estão resolvidas e esperando a hora. Separá-las em duas cores
+  // gastaria atenção numa distinção que não muda o que alguém faz hoje.
+  assert.equal(
+    marcaDaPeca(post({ status: "aprovado" })),
+    marcaDaPeca(post({ status: "agendado" })),
+  );
+});
+
+test("a fila de aprovação vem pela data, da mais próxima para a mais distante", () => {
+  // O que vence primeiro é o que trava primeiro; ordenar por criação faria a
+  // peça de amanhã ficar embaixo da de semana que vem.
+  const depois = post({ status: "aguardando_aprovacao", scheduledFor: "2026-08-25T10:00:00" });
+  const antes = post({ status: "aguardando_aprovacao", scheduledFor: "2026-08-19T10:00:00" });
+  const publicada = post({ status: "publicado" });
+
+  const fila = esperandoAprovacao([depois, publicada, antes]);
+
+  assert.equal(fila.length, 2);
+  assert.equal(fila[0].id, antes.id);
+});
+
+test("peça sem data ainda entra na fila, mas no fim", () => {
+  // Ela trava do mesmo jeito; o que não dá é fingir que tem prazo.
+  const semData = post({ status: "aguardando_aprovacao", scheduledFor: null });
+  const comData = post({ status: "aguardando_aprovacao", scheduledFor: "2026-08-19T10:00:00" });
+
+  assert.deepEqual(
+    esperandoAprovacao([semData, comData]).map((peca) => peca.id),
+    [comData.id, semData.id],
+  );
 });

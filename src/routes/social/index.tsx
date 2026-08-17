@@ -55,9 +55,10 @@ import { NOME_DO_FORMATO, type DesempenhoDoGrupo } from "@/lib/social/conteudo";
 import {
   barrasDoQuadro,
   categoriasDoQuadro,
-  pecasDaBarra,
-  rotuloDaBarra,
+  detalharFaixa,
+  redesPresentes,
   type AtividadeDoBloco,
+  type DetalheDaFaixa,
   type EixoDoQuadro,
   type HorariosDoFormato,
   type MetricaDoQuadro,
@@ -167,10 +168,11 @@ function PainelPage() {
               precisa saber de onde ele vem antes de interpretá-lo, não depois. */}
           <DeOndeVemOsNumeros redes={data.redes} seguidores={data.summary.followers} />
 
-          {/* E o gráfico fica colado em "Suas redes", nesta ordem de propósito:
-              primeiro quando e com o quê a campanha alcança gente, e logo em
-              seguida em que rede aquilo aterrissou. */}
-          {quadro.data ? <GraficoDoQuadro dado={quadro.data} /> : null}
+          {/* O bloco de horários vem antes de tudo o que é por rede, nesta
+              ordem de propósito: primeiro quando, com o quê e para quem a
+              campanha alcança gente, e logo em seguida em que rede aquilo
+              aterrissou. */}
+          {quadro.data ? <BlocoDeHorarios dado={quadro.data} /> : null}
 
           <SectionCard
             title="Suas redes"
@@ -191,8 +193,6 @@ function PainelPage() {
             panorama nenhum. A ordem também ficou mais correta: primeiro o que
             aconteceu, depois a leitura do que aconteceu.
           */}
-          {quadro.data ? <QuadroDeHorarios dado={quadro.data} /> : null}
-
           {resumo.data ? <Recomendacoes lista={resumo.data.recomendacoes} /> : null}
 
           {resumo.data ? (
@@ -683,48 +683,185 @@ function DetalheDoCanal({ canal }: { canal: CanalDetalhado }) {
   );
 }
 
+type DadoDoQuadro = {
+  pecas: number;
+  melhoresBlocos: Recomendacao[];
+  blocosDoDia: Recomendacao[];
+  melhorFormato: DesempenhoDoGrupo | null;
+  atividade: AtividadeDoBloco[];
+  pico: AtividadeDoBloco | null;
+  publico: {
+    pessoas: number;
+    contas: number;
+    porGenero: { genero: Genero; pessoas: number; fatia: number }[];
+    faixaDominante: string | null;
+  };
+  leitura: string | null;
+  horariosPorFormato: HorariosDoFormato[];
+  noTempo: PecaNoTempo[];
+};
+
+/** Um número do quadro, com o caminho para a tela onde ele se explica. */
+function Ficha({
+  rotulo,
+  valor,
+  apoio,
+  para,
+}: {
+  rotulo: string;
+  valor: string;
+  apoio: string;
+  para: "/social/conteudo" | "/social/publico";
+}) {
+  return (
+    <Link
+      to={para}
+      className="rounded-xl border border-border p-3 transition-colors hover:border-accent/60 hover:bg-secondary/40"
+    >
+      <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{rotulo}</p>
+      <p className="mt-1 text-sm font-medium tabular-nums">{valor}</p>
+      <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">{apoio}</p>
+    </Link>
+  );
+}
+
+function Trilha({ fracao, cor, titulo }: { fracao: number; cor: string; titulo: string }) {
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-secondary" title={titulo}>
+      <div
+        className={cn("h-full rounded-full", cor)}
+        style={{ width: `${Math.max(Math.min(fracao, 1) * 100, fracao > 0 ? 2 : 0)}%` }}
+      />
+    </div>
+  );
+}
+
+const EIXOS: { id: EixoDoQuadro; rotulo: string }[] = [
+  // A hora cheia vem primeiro porque é o que o gráfico mostra por padrão: são
+  // vinte e quatro barras finas, e é nelas que o dia se lê como uma curva.
+  { id: "hora", rotulo: "Hora a hora" },
+  { id: "horario", rotulo: "Faixas de 3h" },
+  { id: "dia", rotulo: "Por dia da semana" },
+];
+
+const RECORTES: { id: RecorteDoQuadro; rotulo: string }[] = [
+  { id: "formato", rotulo: "Mídia" },
+  { id: "rede", rotulo: "Rede" },
+];
+
+const METRICAS: { id: MetricaDoQuadro; rotulo: string }[] = [
+  { id: "alcance", rotulo: "Alcance" },
+  { id: "interacoes", rotulo: "Interações" },
+];
 /**
- * O quadro de horários, mídia e público, no Painel.
+ * Horários, mídia e público: um bloco só, no alto do Painel.
  *
- * **Fechado, ele responde quatro perguntas em quatro números.** Aberto, mostra
- * a comparação hora a hora entre quando a campanha publica e quando o público
- * está na rede — que é a única coisa aqui que não caberia num número só.
+ * Eram dois — um quadro com quatro fichas e um gráfico de barras — e a separação
+ * não se sustentava: as fichas respondiam "qual é o melhor horário?" e o gráfico
+ * mostrava o dia inteiro, mas ficavam a uma tela de distância um do outro, de
+ * modo que a ficha era uma conclusão sem a figura e a figura era uma figura sem
+ * conclusão. Juntos, a leitura é a natural: o número no alto, a curva embaixo, e
+ * o clique numa hora abrindo o que sustenta aquele pedaço da curva.
  *
- * Começa fechado de propósito. O Painel é a tela que alguém abre de passagem;
- * um bloco de análise sempre expandido empurraria o resto para baixo da dobra
- * todos os dias por causa de uma leitura que se faz uma vez por semana.
+ * Quatro coisas o clique controla, e cada uma existe por um motivo:
  *
- * As duas barras do mapa aberto são a razão de o quadro existir: uma diz onde a
- * campanha acerta, a outra onde o público está, e o desencontro entre elas é uma
- * decisão esperando para ser tomada.
+ * **O eixo** — hora cheia, faixa de três horas, ou dia da semana. A faixa é a
+ * régua de decisão e a hora cheia é a de inspeção; ver as duas é o que impede
+ * de concluir "o começo da tarde rende" quando o que rende é uma hora só.
+ *
+ * **A rede** — porque "melhor horário" não é uma pergunta da campanha, é uma
+ * pergunta de cada rede. Instagram e LinkedIn não têm o mesmo pico, e a média
+ * dos dois é um horário em que nenhuma das duas está no auge.
+ *
+ * **O recorte e a métrica** — mídia ou rede, alcance ou interações. São as
+ * mesmas peças vistas de outro ângulo, calculadas no navegador: trocar é
+ * instantâneo, e um corte que custa uma ida ao servidor ninguém experimenta.
+ *
+ * O bloco começa com as fichas e a curva visíveis; o "Aprofundar" guarda o
+ * cruzamento com a atividade do público e o horário por formato — leitura de
+ * uma vez por semana, que não deve empurrar o resto da tela para baixo da dobra
+ * todo dia.
  */
-function QuadroDeHorarios({ dado }: { dado: DadoDoQuadro }) {
+function BlocoDeHorarios({ dado }: { dado: DadoDoQuadro }) {
+  const [eixo, setEixo] = useState<EixoDoQuadro>("hora");
+  const [recorte, setRecorte] = useState<RecorteDoQuadro>("formato");
+  const [metrica, setMetrica] = useState<MetricaDoQuadro>("alcance");
+  const [rede, setRede] = useState<NetworkId | null>(null);
+  const [barraAberta, setBarraAberta] = useState<string | null>(null);
   const [aberto, setAberto] = useState(false);
+
+  const redes = useMemo(() => redesPresentes(dado.noTempo), [dado.noTempo]);
+  const barras = useMemo(
+    () => barrasDoQuadro(dado.noTempo, { eixo, recorte, metrica, rede }),
+    [dado.noTempo, eixo, recorte, metrica, rede],
+  );
+  const categorias = useMemo(
+    () => categoriasDoQuadro(dado.noTempo, recorte, rede),
+    [dado.noTempo, recorte, rede],
+  );
+  const detalhe = useMemo(
+    () => (barraAberta ? detalharFaixa(dado.noTempo, barraAberta, { rede }) : null),
+    [dado.noTempo, barraAberta, rede],
+  );
+
+  // Trocar o eixo troca o significado da chave da barra: "c-19" não existe no
+  // eixo de dias. Fechar o painel evita mostrar o detalhe de uma barra que não
+  // está mais na tela.
+  const trocarEixo = (proximo: EixoDoQuadro) => {
+    setEixo(proximo);
+    setBarraAberta(null);
+  };
 
   const melhor = dado.melhoresBlocos[0];
   const generoLider = [...dado.publico.porGenero].sort((a, b) => b.pessoas - a.pessoas)[0];
   const maiorAtividade = Math.max(...dado.atividade.map((bloco) => bloco.atividade), 1);
   const maiorAlcance = Math.max(...dado.blocosDoDia.map((bloco) => bloco.alcanceMedio), 1);
 
+  const corDaCategoria = (chave: string) => {
+    if (recorte === "rede") {
+      return chave === "sem_rede"
+        ? "var(--color-muted-foreground)"
+        : NETWORKS[chave as NetworkId].color;
+    }
+    // Formato não é marca: é grandeza da mesma família. Uma cor só, com
+    // opacidades diferentes, mantém a leitura e não compete com as cores das
+    // redes na mesma tela.
+    const posicao = categorias.indexOf(chave);
+    const opacidade = 1 - (posicao / Math.max(categorias.length, 1)) * 0.65;
+    return `color-mix(in oklch, var(--color-accent) ${Math.round(opacidade * 100)}%, transparent)`;
+  };
+
+  const rotuloDaCategoria = (chave: string) => {
+    if (recorte === "formato") return NOME_DO_FORMATO[chave as PostFormat] ?? chave;
+    return chave === "sem_rede" ? "Sem rede escolhida" : NETWORKS[chave as NetworkId].label;
+  };
+
   return (
     <SectionCard
       title="Horários, mídia e público"
-      description="O que os números dizem sobre quando publicar, em que formato e para quem."
+      description="Quando a campanha alcança gente, com que mídia, em que rede — e quando o público está online."
       icon={Clock}
       actions={
-        <button
-          type="button"
-          onClick={() => setAberto((atual) => !atual)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs transition-colors hover:bg-secondary"
-        >
-          {aberto ? "Recolher" : "Aprofundar"}
-          <ChevronDown className={cn("size-3.5 transition-transform", aberto && "rotate-180")} />
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <MousePointerClick className="size-3.5" />
+            clique em uma barra
+          </span>
+          <button
+            type="button"
+            onClick={() => setAberto((atual) => !atual)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs transition-colors hover:bg-secondary"
+          >
+            {aberto ? "Recolher" : "Aprofundar"}
+            <ChevronDown className={cn("size-3.5 transition-transform", aberto && "rotate-180")} />
+          </button>
+        </div>
       }
     >
       {dado.pecas === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nenhuma publicação medida no período — sem isso não há horário nem formato a apontar.
+          Nenhuma publicação medida no período — sem isso não há horário, formato nem público a
+          apontar. Assim que houver publicações com números, o bloco se preenche sozinho.
         </p>
       ) : (
         <div className="space-y-5">
@@ -781,6 +918,72 @@ function QuadroDeHorarios({ dado }: { dado: DadoDoQuadro }) {
               {dado.leitura}
             </p>
           ) : null}
+
+          {dado.noTempo.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              As publicações do período não têm horário registrado, então não há curva a desenhar.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Seletor opcoes={EIXOS} valor={eixo} onEscolher={trocarEixo} />
+                <Seletor opcoes={RECORTES} valor={recorte} onEscolher={setRecorte} />
+                <Seletor opcoes={METRICAS} valor={metrica} onEscolher={setMetrica} />
+                {redes.length > 1 ? (
+                  <SeletorDeRede redes={redes} valor={rede} onEscolher={setRede} />
+                ) : null}
+              </div>
+
+              {redes.length === 1 ? (
+                // Com uma rede só, o seletor seria um botão que não muda nada —
+                // e some. Mas sumir sem explicação faz parecer que o cruzamento
+                // por rede não existe; a frase diz que ele existe e o que falta.
+                <p className="text-[11px] text-muted-foreground">
+                  Só {NETWORKS[redes[0]].label} tem publicações medidas. O seletor de rede aparece
+                  aqui assim que uma segunda rede tiver dado — aí dá para ver uma de cada vez.
+                </p>
+              ) : null}
+
+              <QuadroDeBarras
+                barras={barras}
+                categorias={categorias}
+                corDaCategoria={corDaCategoria}
+                rotuloDaCategoria={rotuloDaCategoria}
+                onSelecionar={(chave) =>
+                  setBarraAberta((atual) => (atual === chave ? null : chave))
+                }
+                selecionada={barraAberta}
+              />
+
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+                {categorias.map((categoria) => (
+                  <span key={categoria} className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="size-2 rounded-full"
+                      style={{ background: corDaCategoria(categoria) }}
+                    />
+                    {rotuloDaCategoria(categoria)}
+                  </span>
+                ))}
+              </div>
+
+              {recorte === "rede" || rede ? (
+                // A ressalva fica junto do número, não numa nota de pé de
+                // página: uma peça que saiu em três redes entra com um terço em
+                // cada, porque a rede não devolve alcance por canal para uma
+                // publicação só.
+                <p className="text-[11px] text-muted-foreground">
+                  Uma peça publicada em mais de uma rede é dividida igualmente entre elas. O total
+                  da barra é exato; a repartição é aproximada.
+                </p>
+              ) : null}
+
+              {detalhe ? (
+                <DetalheDaFaixaAberta detalhe={detalhe} onFechar={() => setBarraAberta(null)} />
+              ) : null}
+            </>
+          )}
 
           {aberto ? (
             <div className="space-y-5 border-t border-border pt-5">
@@ -867,204 +1070,183 @@ function QuadroDeHorarios({ dado }: { dado: DadoDoQuadro }) {
   );
 }
 
-type DadoDoQuadro = {
-  pecas: number;
-  melhoresBlocos: Recomendacao[];
-  blocosDoDia: Recomendacao[];
-  melhorFormato: DesempenhoDoGrupo | null;
-  atividade: AtividadeDoBloco[];
-  pico: AtividadeDoBloco | null;
-  publico: {
-    pessoas: number;
-    contas: number;
-    porGenero: { genero: Genero; pessoas: number; fatia: number }[];
-    faixaDominante: string | null;
-  };
-  leitura: string | null;
-  horariosPorFormato: HorariosDoFormato[];
-  noTempo: PecaNoTempo[];
-};
-
-/** Um número do quadro, com o caminho para a tela onde ele se explica. */
-function Ficha({
-  rotulo,
+/**
+ * O seletor de rede, com "todas" como primeira opção.
+ *
+ * "Todas" não é o mesmo que nenhuma escolhida — é a soma da campanha, e é a
+ * leitura certa na maior parte do tempo. Deixá-la explícita no seletor evita a
+ * dúvida de estar vendo o total ou o resíduo de um filtro esquecido.
+ */
+function SeletorDeRede({
+  redes,
   valor,
-  apoio,
-  para,
+  onEscolher,
 }: {
-  rotulo: string;
-  valor: string;
-  apoio: string;
-  para: "/social/conteudo" | "/social/publico";
+  redes: NetworkId[];
+  valor: NetworkId | null;
+  onEscolher: (rede: NetworkId | null) => void;
 }) {
   return (
-    <Link
-      to={para}
-      className="rounded-xl border border-border p-3 transition-colors hover:border-accent/60 hover:bg-secondary/40"
-    >
-      <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{rotulo}</p>
-      <p className="mt-1 text-sm font-medium tabular-nums">{valor}</p>
-      <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">{apoio}</p>
-    </Link>
-  );
-}
-
-function Trilha({ fracao, cor, titulo }: { fracao: number; cor: string; titulo: string }) {
-  return (
-    <div className="h-2 overflow-hidden rounded-full bg-secondary" title={titulo}>
-      <div
-        className={cn("h-full rounded-full", cor)}
-        style={{ width: `${Math.max(Math.min(fracao, 1) * 100, fracao > 0 ? 2 : 0)}%` }}
-      />
+    <div className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 p-1">
+      <button
+        type="button"
+        onClick={() => onEscolher(null)}
+        className={cn(
+          "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+          valor === null
+            ? "bg-foreground text-background"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        Todas
+      </button>
+      {redes.map((rede) => (
+        <button
+          key={rede}
+          type="button"
+          onClick={() => onEscolher(rede)}
+          title={NETWORKS[rede].label}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+            valor === rede
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <span
+            aria-hidden
+            className="size-2 rounded-full"
+            style={{ background: NETWORKS[rede].color }}
+          />
+          {NETWORKS[rede].label}
+        </button>
+      ))}
     </div>
   );
 }
 
-const EIXOS: { id: EixoDoQuadro; rotulo: string }[] = [
-  { id: "horario", rotulo: "Por horário" },
-  { id: "dia", rotulo: "Por dia da semana" },
-];
-
-const RECORTES: { id: RecorteDoQuadro; rotulo: string }[] = [
-  { id: "formato", rotulo: "Mídia" },
-  { id: "rede", rotulo: "Rede" },
-];
-
-const METRICAS: { id: MetricaDoQuadro; rotulo: string }[] = [
-  { id: "alcance", rotulo: "Alcance" },
-  { id: "interacoes", rotulo: "Interações" },
-];
-
 /**
- * O gráfico de barras do painel: mídia e rede, ao longo do dia e da semana.
+ * O que se sabe sobre a faixa clicada.
  *
- * Fica logo acima de "Suas redes" porque a ordem de leitura é essa: primeiro
- * **quando e com o quê** a campanha alcança gente, depois **em que rede** isso
- * aterrissou. Herda a gramática do gráfico de alcance por origem — barra
- * empilhada, clique abre o detalhe embaixo — para não obrigar ninguém a
- * aprender uma segunda forma de ler barras na mesma tela.
- *
- * Os três seletores são o que transformam uma figura em exploração: o mesmo
- * conjunto de peças visto por horário ou por dia, cortado por mídia ou por rede,
- * medido em alcance ou em interações. As oito combinações são calculadas no
- * navegador, então trocar é instantâneo.
+ * A barra diz **quanto**; isto diz **o quê, em que dias e se dá para confiar**.
+ * Um pico às 19h só vira decisão quando se sabe que ele é feito de três peças em
+ * três terças diferentes — e vira outra coisa quando é uma peça só que deu certo
+ * uma vez. Por isso a comparação com a média vem sempre acompanhada do tamanho
+ * da amostra, e some quando a amostra não a sustenta.
  */
-function GraficoDoQuadro({ dado }: { dado: DadoDoQuadro }) {
-  const [eixo, setEixo] = useState<EixoDoQuadro>("horario");
-  const [recorte, setRecorte] = useState<RecorteDoQuadro>("formato");
-  const [metrica, setMetrica] = useState<MetricaDoQuadro>("alcance");
-  const [barraAberta, setBarraAberta] = useState<string | null>(null);
-
-  const barras = useMemo(
-    () => barrasDoQuadro(dado.noTempo, { eixo, recorte, metrica }),
-    [dado.noTempo, eixo, recorte, metrica],
-  );
-  const categorias = useMemo(
-    () => categoriasDoQuadro(dado.noTempo, recorte),
-    [dado.noTempo, recorte],
-  );
-
-  // Trocar o eixo troca o significado da chave da barra: "h-6" não existe no
-  // eixo de dias. Fechar o painel evita mostrar o detalhe de uma barra que não
-  // está mais na tela.
-  const trocarEixo = (proximo: EixoDoQuadro) => {
-    setEixo(proximo);
-    setBarraAberta(null);
-  };
-
-  const corDaCategoria = (chave: string) => {
-    if (recorte === "rede") {
-      return chave === "sem_rede"
-        ? "var(--color-muted-foreground)"
-        : NETWORKS[chave as NetworkId].color;
-    }
-    // Formato não é marca: é grandeza da mesma família. Uma cor só, com
-    // opacidades diferentes, mantém a leitura e não compete com as cores das
-    // redes na mesma tela.
-    const posicao = categorias.indexOf(chave);
-    const opacidade = 1 - (posicao / Math.max(categorias.length, 1)) * 0.65;
-    return `color-mix(in oklch, var(--color-accent) ${Math.round(opacidade * 100)}%, transparent)`;
-  };
-
-  const rotuloDaCategoria = (chave: string) => {
-    if (recorte === "formato") return NOME_DO_FORMATO[chave as PostFormat] ?? chave;
-    return chave === "sem_rede" ? "Sem rede escolhida" : NETWORKS[chave as NetworkId].label;
-  };
-
-  if (dado.noTempo.length === 0) {
-    return (
-      <SectionCard
-        title="Mídia, redes, dias e horários"
-        description="Nenhuma publicação medida no período."
-        icon={BarChart3}
-      >
-        <p className="text-sm text-muted-foreground">
-          Assim que houver publicações com números, o gráfico aparece aqui.
-        </p>
-      </SectionCard>
-    );
-  }
-
+function DetalheDaFaixaAberta({
+  detalhe,
+  onFechar,
+}: {
+  detalhe: DetalheDaFaixa;
+  onFechar: () => void;
+}) {
   return (
-    <SectionCard
-      title="Mídia, redes, dias e horários"
-      description="Barras empilhadas do que já foi ao ar. Clique em uma barra para ver as peças dela."
-      icon={BarChart3}
-      actions={
-        <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <MousePointerClick className="size-3.5" />
-          clique em uma barra
-        </span>
-      }
-    >
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Seletor opcoes={EIXOS} valor={eixo} onEscolher={trocarEixo} />
-          <Seletor opcoes={RECORTES} valor={recorte} onEscolher={setRecorte} />
-          <Seletor opcoes={METRICAS} valor={metrica} onEscolher={setMetrica} />
-        </div>
-
-        <QuadroDeBarras
-          barras={barras}
-          categorias={categorias}
-          corDaCategoria={corDaCategoria}
-          rotuloDaCategoria={rotuloDaCategoria}
-          onSelecionar={(chave) => setBarraAberta((atual) => (atual === chave ? null : chave))}
-          selecionada={barraAberta}
-        />
-
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
-          {categorias.map((categoria) => (
-            <span key={categoria} className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className="size-2 rounded-full"
-                style={{ background: corDaCategoria(categoria) }}
-              />
-              {rotuloDaCategoria(categoria)}
-            </span>
-          ))}
-        </div>
-
-        {recorte === "rede" ? (
-          // A ressalva fica junto do número, não numa nota de pé de página: uma
-          // peça que saiu em três redes entra com um terço em cada, porque a rede
-          // não devolve alcance por canal para uma publicação só.
-          <p className="text-[11px] text-muted-foreground">
-            Uma peça publicada em mais de uma rede é dividida igualmente entre elas. O total da
-            barra é exato; a repartição é aproximada.
+    <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium first-letter:uppercase">{detalhe.rotulo}</p>
+          <p className="text-xs text-muted-foreground">
+            {detalhe.pecas.length}{" "}
+            {detalhe.pecas.length === 1 ? "peça publicada" : "peças publicadas"} nesta faixa
           </p>
-        ) : null}
-
-        {barraAberta ? (
-          <PecasDaBarra
-            chave={barraAberta}
-            pecas={pecasDaBarra(dado.noTempo, barraAberta)}
-            onFechar={() => setBarraAberta(null)}
-          />
-        ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={onFechar}
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          aria-label="Fechar"
+        >
+          <X className="size-4" />
+        </button>
       </div>
-    </SectionCard>
+
+      {detalhe.pecas.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Nunca se publicou neste horário. É uma faixa livre para testar — e um teste aqui vale mais
+          do que mais uma peça no horário que já se conhece.
+        </p>
+      ) : (
+        <>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <NumeroDaFaixa rotulo="Alcance somado" valor={formatCompact(detalhe.alcance)} />
+            <NumeroDaFaixa rotulo="Interações" valor={formatCompact(detalhe.interacoes)} />
+            <NumeroDaFaixa
+              rotulo="Média por peça"
+              valor={formatCompact(detalhe.alcanceMedio)}
+              apoio={
+                detalhe.confiavel
+                  ? `${detalhe.contraMedia >= 0 ? "+" : ""}${Math.round(detalhe.contraMedia)}% vs. a média do período`
+                  : "Amostra pequena — ainda não é um padrão"
+              }
+            />
+          </div>
+
+          {detalhe.dias.length > 0 ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              <span className="uppercase tracking-[0.08em]">Dias</span>{" "}
+              {detalhe.dias
+                .map((item) => `${item.rotulo} (${formatCompact(item.alcance)})`)
+                .join(" · ")}
+            </p>
+          ) : null}
+
+          {detalhe.formatos.length > 0 ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              <span className="uppercase tracking-[0.08em]">Mídia</span>{" "}
+              {detalhe.formatos.map((item) => `${item.rotulo} (${item.pecas})`).join(" · ")}
+            </p>
+          ) : null}
+
+          <ul className="mt-3 space-y-2">
+            {detalhe.pecas.map((peca) => (
+              <li key={peca.id}>
+                <Link
+                  to="/social/publicacao/$postId"
+                  params={{ postId: peca.id }}
+                  className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg border border-border bg-card p-3 transition-colors hover:border-accent/60"
+                >
+                  <span className="min-w-0 flex-1 text-sm">
+                    {peca.legenda || "(sem legenda)"}
+                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                      {NOME_DO_FORMATO[peca.formato]}
+                      {peca.redes.length > 0
+                        ? ` · ${peca.redes.map((rede) => NETWORKS[rede].label).join(", ")}`
+                        : ""}
+                      {peca.quando ? ` · ${peca.quando}` : ""}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right text-sm tabular-nums">
+                    {formatCompact(peca.alcance)}
+                    <span className="block text-[11px] text-muted-foreground">
+                      {formatCompact(peca.interacoes)} interações
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+function NumeroDaFaixa({
+  rotulo,
+  valor,
+  apoio,
+}: {
+  rotulo: string;
+  valor: string;
+  apoio?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-2.5">
+      <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{rotulo}</p>
+      <p className="mt-0.5 text-sm font-medium tabular-nums">{valor}</p>
+      {apoio ? <p className="text-[11px] text-muted-foreground">{apoio}</p> : null}
+    </div>
   );
 }
 
@@ -1097,81 +1279,6 @@ function Seletor<T extends string>({
     </div>
   );
 }
-
-/**
- * As peças da barra clicada.
- *
- * É o "aprofundar" do gráfico: a barra diz quanto, esta lista diz **o quê**. Sem
- * ela, um pico às 18h é um número sem nome, e ninguém consegue repetir o que deu
- * certo.
- */
-function PecasDaBarra({
-  chave,
-  pecas,
-  onFechar,
-}: {
-  chave: string;
-  pecas: PecaNoTempo[];
-  onFechar: () => void;
-}) {
-  return (
-    <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium capitalize">{rotuloDaBarra(chave)}</p>
-          <p className="text-xs text-muted-foreground">
-            {pecas.length} {pecas.length === 1 ? "peça publicada" : "peças publicadas"} nesta faixa
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onFechar}
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          aria-label="Fechar"
-        >
-          <X className="size-4" />
-        </button>
-      </div>
-
-      <ul className="mt-3 space-y-2">
-        {pecas.map((peca) => (
-          <li key={peca.id}>
-            <Link
-              to="/social/publicacao/$postId"
-              params={{ postId: peca.id }}
-              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg border border-border bg-card p-3 transition-colors hover:border-accent/60"
-            >
-              <span className="min-w-0 flex-1 text-sm">
-                {peca.legenda || "(sem legenda)"}
-                <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                  {NOME_DO_FORMATO[peca.formato]}
-                  {peca.redes.length > 0
-                    ? ` · ${peca.redes.map((rede) => NETWORKS[rede].label).join(", ")}`
-                    : ""}
-                  {peca.publicadoEm
-                    ? ` · ${new Date(peca.publicadoEm).toLocaleString("pt-BR", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}`
-                    : ""}
-                </span>
-              </span>
-              <span className="shrink-0 text-right text-sm tabular-nums">
-                {formatCompact(peca.alcance)}
-                <span className="block text-[11px] text-muted-foreground">
-                  {formatCompact(peca.interacoes)} interações
-                </span>
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 /**
  * De onde vêm os números que estão na tela.
  *

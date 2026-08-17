@@ -383,3 +383,56 @@ export function motivoParaNaoAvancar(post: Post, destino: PostStatus): string | 
   if (post.format !== "a_definir") return null;
   return "Escolha o formato da peça antes de avançar: carrossel, imagem, vídeo ou story.";
 }
+
+// --- A marcação de cada peça no calendário ----------------------------------
+
+/**
+ * O que a cor de uma peça no calendário significa.
+ *
+ * Três estados, e a escolha deles é sobre **o que exige ação de quem olha**, não
+ * sobre a fase interna da produção:
+ *
+ * `aprovar` — vermelho. Alguém precisa aprovar, e a peça já tem data. É o único
+ * estado urgente do calendário: sem a aprovação, o horário passa e a peça não
+ * sai. Vermelho porque é o que precisa ser visto de longe.
+ *
+ * `aguardando` — amarelo. Aprovada e ainda não publicada. Não exige ação hoje,
+ * exige memória: está no forno, vai sair.
+ *
+ * `publicada` — verde. Foi ao ar. Não há nada a fazer, e é isso que o verde diz.
+ *
+ * `rascunho` — cinza. Ainda em produção, sem data marcada para aprovar. Aparece
+ * porque ocupa o dia, mas não compete por atenção com o que tem prazo.
+ */
+export type MarcaDaPeca = "aprovar" | "aguardando" | "publicada" | "rascunho";
+
+export function marcaDaPeca(post: Post): MarcaDaPeca {
+  if (post.status === "publicado") return "publicada";
+  if (post.status === "aguardando_aprovacao") return "aprovar";
+  if (post.status === "aprovado" || post.status === "agendado") return "aguardando";
+  return "rascunho";
+}
+
+export const ROTULO_DA_MARCA: Record<MarcaDaPeca, string> = {
+  aprovar: "Precisa aprovar",
+  aguardando: "Aprovada, ainda não publicada",
+  publicada: "Publicada",
+  rascunho: "Em produção",
+};
+
+/**
+ * As peças que travam o calendário: já têm data e ainda não foram aprovadas.
+ *
+ * É a lista que responde "o que eu preciso resolver hoje para nada furar". A
+ * ordem é pela data de publicação, da mais próxima para a mais distante — o que
+ * vence primeiro é o que aparece primeiro, e não o que foi criado primeiro.
+ */
+export function esperandoAprovacao(posts: Post[]): Post[] {
+  return posts
+    .filter((post) => marcaDaPeca(post) === "aprovar")
+    .sort((a, b) =>
+      (a.scheduledFor ?? a.publishedAt ?? "9999").localeCompare(
+        b.scheduledFor ?? b.publishedAt ?? "9999",
+      ),
+    );
+}

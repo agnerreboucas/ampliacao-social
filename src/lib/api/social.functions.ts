@@ -110,6 +110,7 @@ import {
   podeMoverPara,
   resumirDia,
 } from "@/lib/social/agenda";
+import { FUSO_DA_CAMPANHA, paredeNaZona } from "@/lib/social/fuso";
 import { lerIcs, planejarImportacao } from "@/lib/social/ics";
 import { MUNICIPIOS_SP, acharMunicipio } from "@/lib/social/municipios-sp";
 import { gerarRelatorioPdf } from "@/lib/social/pdf/relatorio";
@@ -245,6 +246,20 @@ function gerarTokenDeCompartilhamento(): string {
  * Guardar a legenda inteira transformaria o registro em cópia do conteúdo; o
  * começo basta para reconhecer de qual publicação se trata.
  */
+/**
+ * "17/08 09:06" — o instante escrito no fuso da campanha.
+ *
+ * Formatar no servidor, e não no navegador, é o que garante que a lista de
+ * peças concorde com o gráfico: os dois passam a ler o mesmo relógio, o de São
+ * Paulo, independentemente de onde a pessoa abriu a tela.
+ */
+function aParede(instante: string): string {
+  const parede = paredeNaZona(instante, FUSO_DA_CAMPANHA);
+  const [, mes, dia] = parede.dia.split("-");
+  const doisDigitos = (valor: number) => String(valor).padStart(2, "0");
+  return `${dia}/${mes} ${doisDigitos(parede.hora)}:${doisDigitos(parede.minuto)}`;
+}
+
 function resumoDaLegenda(legenda: string): string {
   const limpa = legenda.replace(/\s+/g, " ").trim();
   if (!limpa) return "sem legenda";
@@ -2714,6 +2729,11 @@ export const quadroDeHorarios = createServerFn({ method: "POST" })
             interacoes: peca.interacoes,
             legenda: resumoDaLegenda(peca.post.caption),
             publicadoEm: peca.post.publishedAt ?? "",
+            // O horário escrito vem daqui, já no fuso da campanha, e não do
+            // navegador. Se a lista formatasse com o relógio de quem abriu a
+            // tela, uma pessoa em outro fuso leria "12:06" embaixo da barra das
+            // 9h — o gráfico e a lista discordando sobre a mesma peça.
+            quando: peca.post.publishedAt ? aParede(peca.post.publishedAt) : "",
           }),
         ),
     };

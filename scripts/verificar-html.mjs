@@ -290,12 +290,80 @@ if ((await campoEmail.count()) === 0) {
   await pagina.waitForTimeout(1500);
   await pagina.getByRole("button", { name: /Hoje/i }).first().click();
   await pagina.waitForTimeout(1500);
-  const celulaDeHoje = pagina
-    .locator("button")
-    .filter({ hasText: "Caminhada na Vila Nova" })
-    .first();
-  if (await celulaDeHoje.count()) {
-    await celulaDeHoje.click();
+  // A célula do dia deixou de ser um <button> com o texto dentro — agora é uma
+  // área clicável com rótulo próprio, para caber o "+" de criar ali mesmo.
+  const celulaDeHoje = pagina.getByRole("button", { name: /^Abrir \d{4}-\d{2}-\d{2}$/ }).first();
+  if ((await celulaDeHoje.count()) === 0) {
+    erros.push("as células do calendário deixaram de ser clicáveis");
+  }
+
+  // O semáforo do pedido: vermelho pede aprovação, amarelo está aprovada e não
+  // publicada, verde já saiu. A legenda é a prova de que as três existem.
+  const naAgenda = await pagina.locator("body").innerText();
+  for (const [rotulo, marca] of [
+    ["a marcação de quem precisa aprovar", /Precisa aprovar/i],
+    ["a de aprovada e ainda não publicada", /Aprovada, ainda não publicada/i],
+    ["a de publicada", /Publicada/i],
+  ]) {
+    if (marca.test(naAgenda)) console.log(`✓ ${rotulo}`);
+    else erros.push(`agenda: faltou ${rotulo}`);
+  }
+
+  // A quarta visão: só o que espera um sim, no dia em que vai ao ar.
+  const aprovacoes = pagina.getByRole("button", { name: "Aprovações", exact: true });
+  if (await aprovacoes.count()) {
+    await aprovacoes.click();
+    await pagina.waitForTimeout(1500);
+    const fila = await pagina.locator("body").innerText();
+    if (/espera[m]? aprovação|Nada esperando aprovação/i.test(fila)) {
+      console.log("✓ a visão de aprovações diz o tamanho da fila");
+    } else {
+      erros.push("agenda: a visão de aprovações não resumiu a fila");
+    }
+    await pagina.getByRole("button", { name: "Tudo", exact: true }).click();
+    await pagina.waitForTimeout(1500);
+  } else {
+    erros.push("agenda: não achei a visão de aprovações");
+  }
+
+  // Criar no dia clicado: o "+" pergunta o que é, e o formulário de publicação
+  // já nasce agendado para aquele dia — que é o ponto do pedido.
+  const diaParaCriar = pagina.getByRole("button", { name: /^Abrir \d{4}-\d{2}-\d{2}$/ }).nth(20);
+  await diaParaCriar.hover();
+  await pagina.waitForTimeout(400);
+  const maisDoDia = pagina.getByRole("button", { name: /^Criar neste dia/ }).first();
+  if (await maisDoDia.count()) {
+    const rotulo = (await maisDoDia.getAttribute("aria-label")) ?? "";
+    const dia = rotulo.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? "";
+    await maisDoDia.click();
+    await pagina.waitForTimeout(900);
+    if (/O que você quer criar neste dia/i.test(await pagina.locator("body").innerText())) {
+      console.log("✓ o \"+\" do dia pergunta se é compromisso ou publicação");
+    } else {
+      erros.push("agenda: o \"+\" do dia não perguntou o que criar");
+    }
+
+    await pagina.getByRole("button", { name: /^Publicação/ }).click();
+    await pagina.waitForTimeout(1200);
+    const agendado = await pagina.locator("#scheduledFor").inputValue().catch(() => "");
+    if (agendado.startsWith(dia)) {
+      console.log("✓ a nova publicação já nasce agendada para o dia clicado");
+    } else {
+      erros.push(`agenda: a publicação nasceu com "${agendado}" em vez de ${dia}`);
+    }
+    await pagina.keyboard.press("Escape");
+    await pagina.waitForTimeout(800);
+  } else {
+    erros.push("agenda: o dia do calendário não oferece criar ali mesmo");
+  }
+
+  // Clicar no "+" também abriu aquele dia; o teste seguinte é sobre o dia de
+  // hoje, então o painel volta para ele.
+  const hoje = new Date();
+  const chaveDeHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  const celulaDeVolta = pagina.getByRole("button", { name: `Abrir ${chaveDeHoje}` }).first();
+  if (await celulaDeVolta.count()) {
+    await celulaDeVolta.click();
     await pagina.waitForTimeout(1500);
   }
 
@@ -334,6 +402,36 @@ if ((await campoEmail.count()) === 0) {
   ]) {
     if (marca.test(noPainel)) console.log(`✓ ${rotulo}`);
     else erros.push(`painel: faltou ${rotulo}`);
+  }
+
+  // As vinte e quatro barras finas e o corte por rede são o pedido de agosto:
+  // um gráfico que mostre a hora cheia e deixe escolher a rede. Se o eixo de
+  // hora sumir ou desenhar de menos, o bloco volta a ser figura de faixa larga
+  // sem ninguém perceber.
+  const porHora = pagina.getByRole("button", { name: /^Hora a hora$/ }).first();
+  if (await porHora.count()) {
+    await porHora.click();
+    await pagina.waitForTimeout(1200);
+    const rotulos = await pagina.locator(".recharts-cartesian-axis-tick-value").allTextContents();
+    if (rotulos.includes("0h") && rotulos.includes("22h")) {
+      console.log("✓ o eixo hora a hora vai de 0h a 22h");
+    } else {
+      erros.push("painel: o eixo de hora cheia não desenhou as vinte e quatro horas");
+    }
+
+    // Clicar numa hora precisa abrir o que sustenta aquela barra — sem isso a
+    // barra é um número sem nome, e ninguém consegue repetir o que deu certo.
+    const barras = pagina.locator(".recharts-bar-rectangle");
+    let abriu = false;
+    for (let indice = 0; indice < (await barras.count()) && !abriu; indice += 1) {
+      await barras.nth(indice).click({ force: true }).catch(() => {});
+      await pagina.waitForTimeout(500);
+      abriu = (await pagina.getByText(/nesta faixa/i).count()) > 0;
+    }
+    if (abriu) console.log("✓ clicar numa hora abre o detalhe da faixa");
+    else erros.push("painel: clicar na barra não abriu o detalhe da faixa");
+  } else {
+    erros.push("painel: não achei o eixo de hora a hora");
   }
 
   const aprofundar = pagina.getByRole("button", { name: /Aprofundar/i }).first();

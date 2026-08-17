@@ -12,13 +12,16 @@ import {
 } from "lucide-react";
 
 import {
+  ROTULO_DA_MARCA,
   chaveDoDia,
   distribuirPorDia,
   gradeDoMes,
   horaDoItem,
   lerDia,
+  marcaDaPeca,
   nomeDoDiaDaSemana,
   type ItemDoDia,
+  type MarcaDaPeca,
 } from "@/lib/social/agenda";
 import { NOME_DO_FORMATO } from "@/lib/social/conteudo";
 import { NETWORKS } from "@/lib/social/networks";
@@ -35,21 +38,42 @@ import { cn } from "@/lib/utils";
  * quatro faixas e o resto vira "mais 2"; quem quer o detalhe clica no dia, e ele
  * se abre inteiro embaixo — e clicar no compromisso leva à tela dele.
  *
- * Os três papéis têm cores próprias e sempre as mesmas: evento, produção e
- * publicação. Trocar a cor entre as visões faria a pessoa reaprender o mapa a
- * cada aba.
+ * As cores são sempre as mesmas em todas as visões. Trocar a cor entre as abas
+ * faria a pessoa reaprender o mapa a cada clique — e o mapa aqui é um semáforo:
+ * vermelho pede aprovação, amarelo está aprovado e ainda não saiu, verde já foi
+ * ao ar. O compromisso tem cor própria, fora do semáforo.
  */
 
-export type Visao = "producao" | "publicacao" | "tudo";
+export type Visao = "producao" | "publicacao" | "aprovacao" | "tudo";
 
 /** As fases que o quadro oferece como destino — `falhou` não é movimento. */
 export type FaseDoQuadro = Exclude<Post["status"], "falhou">;
 
-const COR_DO_PAPEL: Record<ItemDoDia["papel"], string> = {
-  evento: "bg-[oklch(0.62_0.19_10)]",
-  producao: "bg-[oklch(0.68_0.16_75)]",
-  agendado: "bg-[oklch(0.58_0.15_250)]",
-  publicado: "bg-[oklch(0.62_0.14_165)]",
+/**
+ * A chave de cor de um item do calendário.
+ *
+ * Não é o papel no dia, e a diferença é o pedido inteiro: o papel diz **por que
+ * a peça está naquele dia** (é entrega, é prazo), e a cor precisa dizer **o que
+ * ela exige de quem está olhando**. Vermelho, amarelo e verde são um semáforo de
+ * aprovação, e é assim que qualquer pessoa lê três cores nessa ordem sem
+ * explicação.
+ */
+type ChaveDeCor = "evento" | MarcaDaPeca;
+
+/**
+ * O semáforo, e por que o compromisso saiu do vermelho.
+ *
+ * O evento era vermelho antes de existir a marcação de aprovação. Manter as duas
+ * coisas vermelhas destruiria o semáforo — o olho não distingue "reunião na
+ * quarta" de "esta peça sai amanhã e ninguém aprovou". O compromisso foi para o
+ * violeta, que não disputa com nenhuma das três.
+ */
+const COR_DA_MARCA: Record<ChaveDeCor, string> = {
+  evento: "bg-[oklch(0.55_0.16_300)]",
+  aprovar: "bg-[oklch(0.58_0.21_25)]",
+  aguardando: "bg-[oklch(0.75_0.16_85)]",
+  publicada: "bg-[oklch(0.62_0.14_165)]",
+  rascunho: "bg-[oklch(0.6_0.02_250)]",
 };
 
 /**
@@ -61,42 +85,53 @@ const COR_DO_PAPEL: Record<ItemDoDia["papel"], string> = {
  * fundo lavado é o que todo calendário que as pessoas já usam faz — e a cor
  * chega antes do texto, que é o ponto.
  *
- * O fundo é o mesmo tom da cor do papel a 12% e a barra à esquerda é o tom
- * cheio: legível nos dois temas sem uma segunda paleta.
+ * O fundo é o mesmo tom da cor a ~15% e a barra à esquerda é o tom cheio:
+ * legível nos dois temas sem uma segunda paleta.
  */
-const FAIXA_DO_PAPEL: Record<ItemDoDia["papel"], { fundo: string; barra: string }> = {
+const FAIXA_DA_MARCA: Record<ChaveDeCor, { fundo: string; barra: string }> = {
   evento: {
     fundo:
-      "bg-[oklch(0.62_0.19_10_/_0.14)] text-[oklch(0.45_0.17_10)] dark:text-[oklch(0.8_0.12_10)]",
-    barra: "bg-[oklch(0.62_0.19_10)]",
+      "bg-[oklch(0.55_0.16_300_/_0.14)] text-[oklch(0.44_0.15_300)] dark:text-[oklch(0.82_0.11_300)]",
+    barra: "bg-[oklch(0.55_0.16_300)]",
   },
-  producao: {
+  aprovar: {
     fundo:
-      "bg-[oklch(0.68_0.16_75_/_0.16)] text-[oklch(0.45_0.14_75)] dark:text-[oklch(0.84_0.11_75)]",
-    barra: "bg-[oklch(0.68_0.16_75)]",
+      "bg-[oklch(0.58_0.21_25_/_0.16)] text-[oklch(0.47_0.19_25)] dark:text-[oklch(0.8_0.14_25)]",
+    barra: "bg-[oklch(0.58_0.21_25)]",
   },
-  agendado: {
+  aguardando: {
     fundo:
-      "bg-[oklch(0.58_0.15_250_/_0.14)] text-[oklch(0.44_0.14_250)] dark:text-[oklch(0.82_0.1_250)]",
-    barra: "bg-[oklch(0.58_0.15_250)]",
+      "bg-[oklch(0.75_0.16_85_/_0.2)] text-[oklch(0.48_0.13_75)] dark:text-[oklch(0.86_0.13_85)]",
+    barra: "bg-[oklch(0.75_0.16_85)]",
   },
-  publicado: {
+  publicada: {
     fundo:
       "bg-[oklch(0.62_0.14_165_/_0.16)] text-[oklch(0.42_0.12_165)] dark:text-[oklch(0.82_0.1_165)]",
     barra: "bg-[oklch(0.62_0.14_165)]",
   },
+  rascunho: {
+    fundo: "bg-[oklch(0.6_0.02_250_/_0.16)] text-muted-foreground",
+    barra: "bg-[oklch(0.6_0.02_250)]",
+  },
 };
 
-const NOME_DO_PAPEL: Record<ItemDoDia["papel"], string> = {
+const NOME_DA_MARCA: Record<ChaveDeCor, string> = {
   evento: "Compromisso",
-  producao: "Em produção",
-  agendado: "Agendado",
-  publicado: "Publicado",
+  ...ROTULO_DA_MARCA,
 };
 
-/** Só o que a visão pediu. É aqui que "produção", "publicação" e "tudo" diferem. */
+function corDoItem(item: ItemDoDia): ChaveDeCor {
+  return item.papel === "evento" ? "evento" : marcaDaPeca(item.post);
+}
+
+/** Só o que a visão pediu. É aqui que as quatro visões diferem. */
 function filtrarPorVisao(itens: ItemDoDia[], visao: Visao): ItemDoDia[] {
   if (visao === "tudo") return itens;
+  if (visao === "aprovacao") {
+    // A visão do pedido: só o que está esperando um "sim". Compromisso não
+    // aparece — ele não se aprova, e diluiria a fila com item que não é tarefa.
+    return itens.filter((item) => item.papel !== "evento" && marcaDaPeca(item.post) === "aprovar");
+  }
   if (visao === "publicacao") {
     return itens.filter((item) => item.papel === "agendado" || item.papel === "publicado");
   }
@@ -111,6 +146,7 @@ export function CalendarioDoMes({
   visao,
   diaAberto,
   onAbrirDia,
+  onCriarNoDia,
 }: {
   ano: number;
   mes: number;
@@ -119,6 +155,8 @@ export function CalendarioDoMes({
   visao: Visao;
   diaAberto: string | null;
   onAbrirDia: (dia: string) => void;
+  /** Quando ausente, o dia só abre — quem não pode publicar não vê o "+". */
+  onCriarNoDia?: (dia: string) => void;
 }) {
   const grade = gradeDoMes(ano, mes);
   const porDia = distribuirPorDia(eventos, posts);
@@ -139,12 +177,14 @@ export function CalendarioDoMes({
           const visiveis = itens.slice(0, 4);
 
           return (
-            <button
+            // A célula deixou de ser um `<button>` para poder ter o "+" dentro:
+            // botão dentro de botão é HTML inválido e o clique fica imprevisível.
+            // A área do dia continua sendo um botão — só que agora ela é a
+            // camada de baixo, e o "+" fica por cima dela.
+            <div
               key={dia}
-              type="button"
-              onClick={() => onAbrirDia(dia)}
               className={cn(
-                "min-h-[7.5rem] rounded-xl border p-1.5 text-left align-top transition-colors",
+                "group/dia relative min-h-[7.5rem] rounded-xl border p-1.5 align-top transition-colors",
                 diaAberto === dia
                   ? "border-accent bg-accent/5"
                   : "border-border hover:bg-secondary/50",
@@ -153,7 +193,14 @@ export function CalendarioDoMes({
                 !doMes && "opacity-45",
               )}
             >
-              <div className="flex items-baseline justify-between gap-1">
+              <button
+                type="button"
+                onClick={() => onAbrirDia(dia)}
+                aria-label={`Abrir ${dia}`}
+                className="absolute inset-0 rounded-xl"
+              />
+
+              <div className="pointer-events-none relative flex items-baseline justify-between gap-1">
                 <span
                   className={cn(
                     "text-xs tabular-nums",
@@ -171,9 +218,23 @@ export function CalendarioDoMes({
                 ) : null}
               </div>
 
-              <ul className="mt-1 space-y-1">
+              {onCriarNoDia ? (
+                // Aparece no hover e no foco pelo teclado. Fixo, ele encheria o
+                // mês de trinta e cinco sinais de mais e roubaria a atenção do
+                // que de fato está marcado no dia.
+                <button
+                  type="button"
+                  onClick={() => onCriarNoDia(dia)}
+                  aria-label={`Criar neste dia (${dia})`}
+                  className="absolute right-1 top-1 z-10 grid size-5 place-items-center rounded-md bg-secondary text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover/dia:opacity-100"
+                >
+                  <Plus className="size-3" />
+                </button>
+              ) : null}
+
+              <ul className="pointer-events-none relative mt-1 space-y-1">
                 {visiveis.map((item, indice) => {
-                  const faixa = FAIXA_DO_PAPEL[item.papel];
+                  const faixa = FAIXA_DA_MARCA[corDoItem(item)];
                   const hora = horaDoItem(item);
 
                   return (
@@ -203,7 +264,7 @@ export function CalendarioDoMes({
                   </li>
                 ) : null}
               </ul>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -213,20 +274,29 @@ export function CalendarioDoMes({
   );
 }
 
+/**
+ * A legenda das cores.
+ *
+ * Um semáforo só funciona quando a pessoa sabe o que cada cor quer dizer, e
+ * "todo mundo entende vermelho" é verdade só até a primeira dúvida sobre se o
+ * vermelho é urgência de prazo ou de aprovação. Escrever custa uma linha.
+ */
 function Legenda({ visao }: { visao: Visao }) {
-  const papeis: ItemDoDia["papel"][] =
-    visao === "publicacao"
-      ? ["agendado", "publicado"]
-      : visao === "producao"
-        ? ["evento", "producao"]
-        : ["evento", "producao", "agendado", "publicado"];
+  const cores: ChaveDeCor[] =
+    visao === "aprovacao"
+      ? ["aprovar"]
+      : visao === "publicacao"
+        ? ["aprovar", "aguardando", "publicada"]
+        : visao === "producao"
+          ? ["evento", "rascunho", "aprovar"]
+          : ["evento", "rascunho", "aprovar", "aguardando", "publicada"];
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
-      {papeis.map((papel) => (
-        <span key={papel} className="inline-flex items-center gap-1.5">
-          <span aria-hidden className={cn("size-2 rounded-full", COR_DO_PAPEL[papel])} />
-          {NOME_DO_PAPEL[papel]}
+      {cores.map((cor) => (
+        <span key={cor} className="inline-flex items-center gap-1.5">
+          <span aria-hidden className={cn("size-2 rounded-full", COR_DA_MARCA[cor])} />
+          {NOME_DA_MARCA[cor]}
         </span>
       ))}
     </div>
@@ -312,44 +382,80 @@ export function PainelDoDia({
   itens,
   visao,
   onVincular,
+  onNovoCompromisso,
+  onNovaPublicacao,
   contas = [],
 }: {
   dia: string;
   itens: ItemDoDia[];
   visao: Visao;
   onVincular?: (evento: Evento) => void;
+  /** Ausentes quando quem está olhando não tem permissão de criar. */
+  onNovoCompromisso?: () => void;
+  onNovaPublicacao?: () => void;
   contas?: SocialAccount[];
 }) {
   const redeDaConta = new Map(contas.map((conta) => [conta.id, conta.networkId]));
   const filtrados = filtrarPorVisao(itens, visao);
-
-  if (filtrados.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Nada neste dia{visao === "tudo" ? "" : " nesta visão"}.
-      </p>
-    );
-  }
+  const podeCriar = Boolean(onNovoCompromisso || onNovaPublicacao);
 
   return (
-    <ul className="space-y-2">
-      {filtrados.map((item, indice) => (
-        <li key={`${dia}-${indice}`}>
-          {item.papel === "evento" ? (
-            <CartaoDeEvento evento={item.evento} hora={horaDoItem(item)} onVincular={onVincular} />
-          ) : (
-            <CartaoDePeca
-              post={item.post}
-              papel={item.papel}
-              hora={horaDoItem(item)}
-              redes={item.post.accountIds
-                .map((id) => redeDaConta.get(id))
-                .filter((rede): rede is NetworkId => Boolean(rede))}
-            />
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-3">
+      {podeCriar ? (
+        // As duas criações ficam **no dia aberto**, e é o que o pedido pede:
+        // clicar num dia e já poder pôr ali um compromisso ou uma publicação,
+        // sem ir procurar o botão no alto da tela e depois digitar a data que
+        // já se sabia. O dia já está escolhido — os dois botões só herdam.
+        <div className="flex flex-wrap gap-2">
+          {onNovoCompromisso ? (
+            <button
+              type="button"
+              onClick={onNovoCompromisso}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs transition-colors hover:bg-secondary"
+            >
+              <Plus className="size-3.5" /> Compromisso neste dia
+            </button>
+          ) : null}
+          {onNovaPublicacao ? (
+            <button
+              type="button"
+              onClick={onNovaPublicacao}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs transition-colors hover:bg-secondary"
+            >
+              <Send className="size-3.5" /> Publicação neste dia
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {filtrados.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nada neste dia{visao === "tudo" ? "" : " nesta visão"}.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {filtrados.map((item, indice) => (
+            <li key={`${dia}-${indice}`}>
+              {item.papel === "evento" ? (
+                <CartaoDeEvento
+                  evento={item.evento}
+                  hora={horaDoItem(item)}
+                  onVincular={onVincular}
+                />
+              ) : (
+                <CartaoDePeca
+                  post={item.post}
+                  hora={horaDoItem(item)}
+                  redes={item.post.accountIds
+                    .map((id) => redeDaConta.get(id))
+                    .filter((rede): rede is NetworkId => Boolean(rede))}
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -366,7 +472,7 @@ function CartaoDeEvento({
     <div className="flex min-w-0 items-start gap-3 rounded-xl border border-border p-3">
       <span
         aria-hidden
-        className={cn("mt-1.5 size-2 shrink-0 rounded-full", COR_DO_PAPEL.evento)}
+        className={cn("mt-1.5 size-2 shrink-0 rounded-full", COR_DA_MARCA.evento)}
       />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -420,12 +526,10 @@ function CartaoDeEvento({
 
 function CartaoDePeca({
   post,
-  papel,
   hora,
   redes,
 }: {
   post: Post;
-  papel: ItemDoDia["papel"];
   hora: string | null;
   redes: NetworkId[];
 }) {
@@ -437,12 +541,16 @@ function CartaoDePeca({
     >
       <span
         aria-hidden
-        className={cn("mt-1.5 size-2 shrink-0 rounded-full", COR_DO_PAPEL[papel])}
+        className={cn("mt-1.5 size-2 shrink-0 rounded-full", COR_DA_MARCA[marcaDaPeca(post)])}
       />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-xs tabular-nums text-muted-foreground">{hora ?? "—"}</span>
-          <span className="text-xs text-muted-foreground">{NOME_DO_PAPEL[papel]}</span>
+          {/* O rótulo é o da marcação, não o do papel: quem olha o dia precisa
+              saber se aquilo espera um "sim" dela, e "Agendado" não diz isso. */}
+          <span className="text-xs text-muted-foreground">
+            {ROTULO_DA_MARCA[marcaDaPeca(post)]}
+          </span>
           {post.format !== "a_definir" ? (
             <span className="rounded border border-border px-1 py-0.5 text-[10px] text-muted-foreground">
               {NOME_DO_FORMATO[post.format]}
@@ -739,7 +847,7 @@ export function SemanaEmLinha({
 
             <ul className="mt-1.5 space-y-1">
               {itens.slice(0, 4).map((item, indice) => {
-                const faixa = FAIXA_DO_PAPEL[item.papel];
+                const faixa = FAIXA_DA_MARCA[corDoItem(item)];
                 return (
                   <li
                     key={indice}

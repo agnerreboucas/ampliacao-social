@@ -62,7 +62,8 @@ número.
 | §10 Status dos conteúdos               | As fases do quadro                                       |
 | §13 Análise individual                 | Tela da publicação, com quebra por rede                  |
 | §16 Análise por formato                | Conteúdo → "Por formato", com ressalva de amostra        |
-| §17 Análise temporal (dia, horário)    | Mapa de calor e gráfico de barras                        |
+| §17 Análise temporal (dia, horário)    | Mapa de calor e gráfico de barras hora a hora            |
+| §10 Aprovação como estado visível      | Semáforo no calendário e visão "Aprovações"              |
 | §18 Amostra pequena não vira conclusão | Regra do módulo de horários, com testes                  |
 | §19 Resumo do dia                      | `resumirDia` no domínio — falta a tela                   |
 
