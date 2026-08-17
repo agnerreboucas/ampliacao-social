@@ -99,6 +99,7 @@ import {
   melhoresBlocos,
   melhoresHorarios,
   picoDoPublico,
+  type PecaNoTempo,
 } from "@/lib/social/horarios";
 import { conversasPorPeca, indexarOrigens, resumirPeca } from "@/lib/social/rastreio";
 import {
@@ -856,6 +857,14 @@ function resumirRedes(contas: SocialAccount[], period: PeriodKey) {
       return {
         networkId,
         contas: contasDaRede.length,
+        /**
+         * Nenhum dado importado para esta rede.
+         *
+         * É diferente de "os números estão em zero": a rede existe no cadastro e
+         * nunca recebeu leitura nenhuma. A tela precisa dizer isso em vez de
+         * desenhar um cartão zerado, que lê como queda.
+         */
+        semDados: serieCompleta.length === 0,
         // Uma conexão com problema pesa mais que o número bonito: é ela que
         // explica por que o número parou de crescer.
         comProblema: contasDaRede.filter((conta) => conta.status !== "ativa").length,
@@ -2678,6 +2687,35 @@ export const quadroDeHorarios = createServerFn({ method: "POST" })
       /** A conclusão que sai de cruzar os dois lados. Nula sem os dois. */
       leitura: compararComOPublico(blocos[0], pico),
       horariosPorFormato: horariosPorFormato(pecas),
+      /**
+       * As peças reduzidas ao que o gráfico de barras precisa.
+       *
+       * Mandar as peças e montar as barras no navegador é deliberado: trocar o
+       * eixo (horário ou dia), o recorte (mídia ou rede) e a métrica é um clique
+       * que não deve custar uma ida ao servidor — senão ninguém experimenta os
+       * cortes, e o gráfico deixa de ser exploração para ser figura.
+       */
+      noTempo: pecas
+        .filter((peca) => peca.diaDaSemana !== null && peca.hora !== null)
+        .map(
+          (peca): PecaNoTempo => ({
+            id: peca.post.id,
+            dia: peca.diaDaSemana!,
+            hora: peca.hora!,
+            formato: peca.post.format,
+            redes: [
+              ...new Set(
+                peca.post.accountIds
+                  .map((id) => contas.find((conta) => conta.id === id)?.networkId)
+                  .filter((rede): rede is NetworkId => Boolean(rede)),
+              ),
+            ],
+            alcance: peca.alcance,
+            interacoes: peca.interacoes,
+            legenda: resumoDaLegenda(peca.post.caption),
+            publicadoEm: peca.post.publishedAt ?? "",
+          }),
+        ),
     };
   });
 

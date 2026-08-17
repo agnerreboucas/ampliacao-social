@@ -5,8 +5,12 @@ import type { PecaAvaliada } from "./conteudo.ts";
 import {
   BLOCOS,
   atividadePorBloco,
+  barrasDoQuadro,
   blocoDaHora,
   blocosDoDia,
+  categoriasDoQuadro,
+  pecasDaBarra,
+  rotuloDaBarra,
   compararComOPublico,
   picoDoPublico,
   descreverQuando,
@@ -14,8 +18,9 @@ import {
   mapaDeHorarios,
   melhoresBlocos,
   melhoresHorarios,
+  type PecaNoTempo,
 } from "./horarios.ts";
-import type { Post, PostFormat } from "./types.ts";
+import type { NetworkId, Post, PostFormat } from "./types.ts";
 
 /**
  * Uma peça já avaliada, com o que o módulo de horários precisa: quando saiu,
@@ -286,4 +291,128 @@ test("os oito blocos do dia vêm todos, na ordem do relógio", () => {
   );
   assert.equal(blocos[6].alcanceMedio, 8000);
   assert.equal(blocos[0].pecas, 0);
+});
+
+// --- O quadro de barras ------------------------------------------------------
+
+function noTempo(
+  dia: number,
+  hora: number,
+  alcance: number,
+  formato: PostFormat,
+  redes: NetworkId[],
+): PecaNoTempo {
+  return {
+    id: `p-${dia}-${hora}-${Math.random()}`,
+    dia,
+    hora,
+    formato,
+    redes,
+    alcance,
+    interacoes: Math.round(alcance * 0.05),
+    legenda: "legenda",
+    publicadoEm: "2026-08-17T12:00:00",
+  };
+}
+
+test("o eixo de horário tem os oito blocos; o de dia, os sete dias", () => {
+  const pecas = [noTempo(2, 19, 5000, "imagem", ["instagram"])];
+
+  assert.equal(barrasDoQuadro(pecas, { eixo: "horario", recorte: "formato" }).length, 8);
+  assert.equal(barrasDoQuadro(pecas, { eixo: "dia", recorte: "formato" }).length, 7);
+});
+
+test("por formato, a soma é exata", () => {
+  // Cada peça tem um formato só — nada a repartir.
+  const pecas = [
+    noTempo(2, 19, 5000, "imagem", ["instagram"]),
+    noTempo(3, 20, 3000, "video", ["instagram"]),
+    noTempo(4, 19, 2000, "imagem", ["instagram"]),
+  ];
+
+  const barras = barrasDoQuadro(pecas, { eixo: "horario", recorte: "formato" });
+  const noite = barras.find((barra) => barra.chave === "h-6");
+
+  assert.equal(noite?.total, 10_000);
+  assert.equal(noite?.pecas, 3);
+  assert.equal(noite?.fatias.find((f) => f.chave === "imagem")?.valor, 7000);
+  assert.equal(noite?.fatias.find((f) => f.chave === "video")?.valor, 3000);
+});
+
+test("por rede, a peça é dividida entre as redes e o total não infla", () => {
+  // O erro pior seria somar o alcance inteiro em cada rede: a barra ficaria
+  // maior que o alcance real da campanha.
+  const pecas = [noTempo(2, 19, 6000, "carrossel", ["instagram", "facebook", "tiktok"])];
+
+  const barra = barrasDoQuadro(pecas, { eixo: "horario", recorte: "rede" }).find(
+    (item) => item.chave === "h-6",
+  );
+
+  assert.equal(barra?.total, 6000);
+  assert.equal(barra?.fatias.length, 3);
+  for (const fatia of barra?.fatias ?? []) assert.equal(fatia.valor, 2000);
+});
+
+test("peça sem rede escolhida não desaparece do total", () => {
+  const barra = barrasDoQuadro([noTempo(2, 19, 4000, "a_definir", [])], {
+    eixo: "horario",
+    recorte: "rede",
+  }).find((item) => item.chave === "h-6");
+
+  assert.equal(barra?.total, 4000);
+  assert.equal(barra?.fatias[0].chave, "sem_rede");
+});
+
+test("a métrica de interações usa as interações, não o alcance", () => {
+  const pecas = [noTempo(2, 19, 10_000, "imagem", ["instagram"])];
+
+  const porInteracao = barrasDoQuadro(pecas, {
+    eixo: "horario",
+    recorte: "formato",
+    metrica: "interacoes",
+  }).find((item) => item.chave === "h-6");
+
+  assert.equal(porInteracao?.total, 500);
+});
+
+test("as fatias vêm da maior para a menor", () => {
+  const pecas = [
+    noTempo(2, 19, 1000, "imagem", ["instagram"]),
+    noTempo(2, 20, 9000, "video", ["instagram"]),
+  ];
+
+  const barra = barrasDoQuadro(pecas, { eixo: "horario", recorte: "formato" })[6];
+
+  assert.equal(barra.fatias[0].chave, "video");
+});
+
+test("as categorias saem dos dados, não de uma lista fixa", () => {
+  const pecas = [
+    noTempo(2, 19, 1000, "imagem", ["instagram", "facebook"]),
+    noTempo(3, 10, 1000, "story", ["tiktok"]),
+  ];
+
+  assert.deepEqual(categoriasDoQuadro(pecas, "formato").sort(), ["imagem", "story"]);
+  assert.deepEqual(categoriasDoQuadro(pecas, "rede").sort(), ["facebook", "instagram", "tiktok"]);
+});
+
+test("clicar na barra devolve as peças dela, da maior para a menor", () => {
+  const pecas = [
+    noTempo(2, 19, 3000, "imagem", ["instagram"]),
+    noTempo(4, 20, 8000, "video", ["instagram"]),
+    noTempo(1, 10, 5000, "imagem", ["instagram"]),
+  ];
+
+  const daNoite = pecasDaBarra(pecas, "h-6");
+  assert.equal(daNoite.length, 2);
+  assert.equal(daNoite[0].alcance, 8000);
+
+  const daQuinta = pecasDaBarra(pecas, "d-4");
+  assert.equal(daQuinta.length, 1);
+  assert.equal(daQuinta[0].alcance, 8000);
+});
+
+test("o rótulo da barra é lido por gente", () => {
+  assert.equal(rotuloDaBarra("h-6"), "18h–21h");
+  assert.equal(rotuloDaBarra("d-4"), "quinta-feira");
 });

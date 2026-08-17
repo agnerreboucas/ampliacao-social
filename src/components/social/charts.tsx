@@ -54,6 +54,21 @@ function ChartFrame({ height, children }: { height: number; children: React.Reac
 
 type TooltipEntry = { name?: string; value?: number; color?: string; dataKey?: string };
 
+/**
+ * O rótulo do tooltip, que não é necessariamente uma data.
+ *
+ * Antes o tooltip rodava `formatDay` em todo rótulo de texto. Isso funcionava
+ * enquanto os únicos gráficos eram séries diárias — e derrubava a **tela
+ * inteira** no primeiro gráfico com outro eixo: `formatDay("18h–21h")` lança
+ * `RangeError: Invalid time value` dentro do render do recharts, e o painel some
+ * em branco. Testar o formato antes de converter é o que impede um eixo novo de
+ * quebrar uma tela que não tem nada a ver com ele.
+ */
+function rotuloDoTooltip(label: string | number | undefined): string {
+  if (typeof label !== "string") return label === undefined ? "" : String(label);
+  return /^\d{4}-\d{2}-\d{2}$/.test(label) ? formatDay(label) : label;
+}
+
 function ChartTooltip({
   active,
   payload,
@@ -69,7 +84,7 @@ function ChartTooltip({
 
   return (
     <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-      <div className="mb-1 font-medium">{typeof label === "string" ? formatDay(label) : label}</div>
+      <div className="mb-1 font-medium">{rotuloDoTooltip(label)}</div>
       {payload.map((entry) => (
         <div key={entry.dataKey} className="flex items-center gap-2 py-0.5">
           <span className="size-2 rounded-full" style={{ background: entry.color }} />
@@ -372,6 +387,96 @@ export function ActivityChart({
           cursor={{ fill: CURSOR_FILL }}
         />
         <Bar dataKey="activity" name="Interações" fill={ORGANIC_COLOR} radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ChartFrame>
+  );
+}
+
+/**
+ * O gráfico do quadro: barras empilhadas por mídia ou por rede, no eixo do
+ * horário ou do dia da semana.
+ *
+ * É o irmão do "Alcance por origem", com a mesma gramática — barra empilhada,
+ * clique para abrir o detalhe — porque a pessoa já aprendeu a ler aquele. O que
+ * muda é o que está sendo cortado: ali, orgânico contra pago; aqui, o formato ou
+ * a rede, ao longo do dia ou da semana.
+ *
+ * A cor de cada fatia vem de quem é dono dela. Rede usa a cor de marca que a
+ * rede tem no resto da plataforma; formato usa uma escala do mesmo tom do
+ * acento, variando a opacidade — porque formato não é marca, é grandeza da mesma
+ * família, e dar seis cores a ele competiria com as cores das redes.
+ */
+export function QuadroDeBarras({
+  barras,
+  categorias,
+  corDaCategoria,
+  rotuloDaCategoria,
+  height = 280,
+  onSelecionar,
+  selecionada,
+}: {
+  barras: { chave: string; rotulo: string; total: number; pecas: number }[];
+  categorias: string[];
+  corDaCategoria: (chave: string) => string;
+  rotuloDaCategoria: (chave: string) => string;
+  height?: number;
+  onSelecionar?: (chave: string) => void;
+  selecionada?: string | null;
+}) {
+  const clicavel = Boolean(onSelecionar);
+  const opacidade = (chave: string) => (!selecionada || chave === selecionada ? 1 : 0.3);
+
+  return (
+    <ChartFrame height={height}>
+      <BarChart
+        data={barras}
+        margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+        onClick={(estado) => {
+          if (!onSelecionar) return;
+          const barra = estado?.activePayload?.[0]?.payload as { chave?: string } | undefined;
+          if (barra?.chave) onSelecionar(barra.chave);
+        }}
+        style={clicavel ? { cursor: "pointer" } : undefined}
+      >
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis
+          dataKey="rotulo"
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          interval={0}
+        />
+        <YAxis
+          stroke={AXIS_COLOR}
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={formatCompact}
+          width={52}
+        />
+        <Tooltip content={<ChartTooltip />} cursor={{ fill: CURSOR_FILL }} />
+        {categorias.map((categoria, indice) => (
+          <Bar
+            key={categoria}
+            dataKey={(barra: { fatias: { chave: string; valor: number }[] }) =>
+              barra.fatias.find((fatia) => fatia.chave === categoria)?.valor ?? 0
+            }
+            name={rotuloDaCategoria(categoria)}
+            stackId="quadro"
+            // Só a última fatia arredonda o topo; arredondar todas desenharia
+            // degraus no meio da pilha.
+            radius={indice === categorias.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+          >
+            {barras.map((barra) => (
+              <Cell
+                key={barra.chave}
+                fill={corDaCategoria(categoria)}
+                fillOpacity={opacidade(barra.chave)}
+              />
+            ))}
+          </Bar>
+        ))}
       </BarChart>
     </ChartFrame>
   );

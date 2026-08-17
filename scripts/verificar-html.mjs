@@ -133,10 +133,15 @@ if ((await campoEmail.count()) === 0) {
     .click();
   await pagina.waitForTimeout(2500);
   const publico = await pagina.locator("body").innerText();
+  // Com dados reais de conteúdo, o perfil demográfico não existe: ele vem da
+  // conexão por OAuth, não da exportação. A tela precisa **dizer isso** — o
+  // erro seria desenhar uma pirâmide vazia, que lê como "o público sumiu".
   if (/HOMENS/i.test(publico) && /MULHERES/i.test(publico)) {
     console.log("✓ a pirâmide de gênero e idade desenhou");
+  } else if (/exportação de conteúdo|não vem|indisponível|conectada/i.test(publico)) {
+    console.log("✓ Público explica por que ainda não há perfil demográfico");
   } else {
-    erros.push("a pirâmide de gênero e idade não apareceu em Público");
+    erros.push("Público não desenhou a pirâmide nem explicou a ausência");
   }
 
   await pagina
@@ -178,8 +183,10 @@ if ((await campoEmail.count()) === 0) {
   const conversa = await pagina.locator("body").innerText();
   if (/de alcance/i.test(conversa) && /(Imagem|Vídeo|Carrossel|Story)/.test(conversa)) {
     console.log("✓ a conversa mostra a publicação que a originou");
+  } else if (/Nenhuma conversa|nada por aqui|vazio/i.test(conversa)) {
+    console.log("✓ Relacionamento mostra o estado vazio, sem inventar conversa");
   } else {
-    erros.push("a conversa não mostra a peça de origem");
+    erros.push("a conversa não mostra a peça de origem nem o estado vazio");
   }
 
   await pagina

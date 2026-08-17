@@ -1,3 +1,4 @@
+import { instanteNaZona } from "./fuso.ts";
 import type { Evento, TipoDeEvento } from "./types";
 
 /**
@@ -70,63 +71,6 @@ function limparValor(bruto: string): string {
     .replace(/\\;/g, ";")
     .replace(/\\\\/g, "\\")
     .trim();
-}
-
-/**
- * O deslocamento de um fuso nomeado num instante, em minutos.
- *
- * `Intl` carrega a base de fusos completa no Node e no navegador; reimplementar
- * as regras de horário de verão aqui seria escrever de novo um dado que já vem
- * com a plataforma — e errar nas bordas, que é onde ele importa.
- */
-function deslocamentoDoFuso(instante: number, fuso: string): number {
-  const formatador = new Intl.DateTimeFormat("en-US", {
-    timeZone: fuso,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-
-  const partes = Object.fromEntries(
-    formatador.formatToParts(new Date(instante)).map((parte) => [parte.type, parte.value]),
-  );
-
-  const comoUtc = Date.UTC(
-    Number(partes.year),
-    Number(partes.month) - 1,
-    Number(partes.day),
-    // Meia-noite volta como "24" em algumas versões do ICU.
-    Number(partes.hour) % 24,
-    Number(partes.minute),
-    Number(partes.second),
-  );
-
-  return (comoUtc - instante) / 60000;
-}
-
-/**
- * O instante em que um horário de parede acontece, num fuso nomeado.
- *
- * Duas passadas: a primeira estima o deslocamento pelo palpite, a segunda o
- * confirma no instante corrigido. É o que resolve as horas que ficam em cima da
- * virada do horário de verão, onde o deslocamento antes e depois é diferente.
- */
-function instanteNaZona(
-  ano: number,
-  mes: number,
-  dia: number,
-  hora: number,
-  minuto: number,
-  segundo: number,
-  fuso: string,
-): number {
-  const palpite = Date.UTC(ano, mes - 1, dia, hora, minuto, segundo);
-  const primeiro = palpite - deslocamentoDoFuso(palpite, fuso) * 60000;
-  return palpite - deslocamentoDoFuso(primeiro, fuso) * 60000;
 }
 
 /**

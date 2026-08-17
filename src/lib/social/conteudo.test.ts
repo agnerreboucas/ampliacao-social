@@ -191,10 +191,13 @@ test("os dias da semana saem em ordem de calendário, não de desempenho", () =>
 });
 
 test("o horário é agrupado em faixas, não em vinte e quatro horas", () => {
+  // O fuso vai explícito: a análise lê a hora no fuso da campanha, e um horário
+  // sem fuso seria interpretado como hora da máquina que roda o teste — que é
+  // UTC aqui e outra coisa na máquina de quem programa.
   const pecas = avaliarPecas([
-    comAlcance(1000, { publishedAt: "2026-08-05T08:00:00" }),
-    comAlcance(2000, { publishedAt: "2026-08-05T10:00:00" }),
-    comAlcance(3000, { publishedAt: "2026-08-05T20:00:00" }),
+    comAlcance(1000, { publishedAt: "2026-08-05T08:00:00-03:00" }),
+    comAlcance(2000, { publishedAt: "2026-08-05T10:00:00-03:00" }),
+    comAlcance(3000, { publishedAt: "2026-08-05T20:00:00-03:00" }),
   ]);
 
   const faixas = porFaixaDeHorario(pecas);

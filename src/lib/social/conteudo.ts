@@ -1,4 +1,5 @@
 import { FORMATOS_DE_FEED } from "./types.ts";
+import { FUSO_DA_CAMPANHA, paredeNaZona } from "./fuso.ts";
 import type { InboxItem, Post, PostFormat } from "./types";
 
 /**
@@ -155,7 +156,11 @@ function comentariosPorPost(inbox: InboxItem[]): Map<string, number> {
  * post alcançou 5.000 não diz nada sozinho; saber que alcançou 60% acima do que
  * a conta costuma alcançar diz o que fazer.
  */
-export function avaliarPecas(posts: Post[], inbox: InboxItem[] = []): PecaAvaliada[] {
+export function avaliarPecas(
+  posts: Post[],
+  inbox: InboxItem[] = [],
+  fuso: string = FUSO_DA_CAMPANHA,
+): PecaAvaliada[] {
   const publicados = posts.filter((post) => post.status === "publicado" && post.metrics);
   if (publicados.length === 0) return [];
 
@@ -167,7 +172,7 @@ export function avaliarPecas(posts: Post[], inbox: InboxItem[] = []): PecaAvalia
     .map((post) => {
       const metricas = post.metrics!;
       const interacoes = metricas.likes + metricas.comments + metricas.shares + metricas.saves;
-      const quando = post.publishedAt ? new Date(post.publishedAt) : null;
+      const parede = post.publishedAt ? paredeNaZona(post.publishedAt, fuso) : null;
 
       return {
         post,
@@ -177,8 +182,12 @@ export function avaliarPecas(posts: Post[], inbox: InboxItem[] = []): PecaAvalia
         comentarios: comentarios.get(post.id) ?? 0,
         contraMedia: alcanceMedio > 0 ? (metricas.reach / alcanceMedio - 1) * 100 : 0,
         assuntos: assuntosDe(post.caption),
-        diaDaSemana: quando ? quando.getDay() : null,
-        hora: quando ? quando.getHours() : null,
+        // O dia e a hora saem do fuso da campanha, não do relógio da máquina.
+        // `getHours()` devolveria a hora do servidor: a publicação de abertura,
+        // que saiu às 02h31 em São Paulo, viraria 05h31 numa hospedagem em UTC —
+        // e mudaria de bloco do dia, mudando a recomendação de horário.
+        diaDaSemana: parede ? parede.diaDaSemana : null,
+        hora: parede ? parede.hora : null,
       };
     })
     .sort((a, b) => b.alcance - a.alcance);

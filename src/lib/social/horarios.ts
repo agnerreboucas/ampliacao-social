@@ -1,5 +1,5 @@
 import { NOME_DO_FORMATO, type PecaAvaliada } from "./conteudo.ts";
-import type { PostFormat } from "./types.ts";
+import type { NetworkId, PostFormat } from "./types.ts";
 
 /**
  * Quando publicar.
@@ -368,4 +368,144 @@ export function compararComOPublico(
   }
 
   return `A campanha rende mais em ${BLOCOS[melhorDaCampanha.bloco].rotulo}, mas o público está mais na rede em ${pico.rotulo} — vale testar publicar ali.`;
+}
+
+// --- O quadro de barras: dias, horários, mídia e redes ----------------------
+
+/**
+ * Uma peça publicada, reduzida ao que o gráfico precisa.
+ *
+ * O servidor manda esta forma leve — sem métricas completas, sem legenda inteira
+ * — e o navegador monta as barras. É deliberado: trocar de eixo (horário ou dia)
+ * ou de recorte (formato ou rede) é um clique que não deve custar uma ida ao
+ * servidor, senão o gráfico parece pesado e ninguém experimenta os cortes.
+ */
+export type PecaNoTempo = {
+  id: string;
+  /** 0 = domingo. */
+  dia: number;
+  hora: number;
+  formato: PostFormat;
+  redes: NetworkId[];
+  alcance: number;
+  interacoes: number;
+  legenda: string;
+  publicadoEm: string;
+};
+
+export type EixoDoQuadro = "horario" | "dia";
+export type RecorteDoQuadro = "formato" | "rede";
+export type MetricaDoQuadro = "alcance" | "interacoes";
+
+export type FatiaDaBarra = { chave: string; valor: number };
+
+export type BarraDoQuadro = {
+  /** Identifica a barra para o clique: `h-6` ou `d-4`. */
+  chave: string;
+  rotulo: string;
+  total: number;
+  pecas: number;
+  /** Uma fatia por formato ou por rede presente na barra. */
+  fatias: FatiaDaBarra[];
+};
+
+/**
+ * As barras do quadro, empilhadas por formato ou por rede.
+ *
+ * Duas notas sobre a soma, e as duas importam para o número não mentir:
+ *
+ * **Por formato, a divisão é exata.** Cada peça tem um formato só, então a barra
+ * é a soma limpa das peças daquela faixa.
+ *
+ * **Por rede, o valor de cada peça é dividido igualmente entre as redes em que
+ * ela saiu.** Uma peça publicada em Instagram e Facebook entra com metade em
+ * cada. O total da barra continua exato; o que é aproximado é a repartição — e
+ * ela precisa ser, porque a rede não devolve alcance por canal para uma peça só
+ * que foi para três lugares. Somar o alcance inteiro em cada rede daria uma
+ * barra maior que o alcance real, que é o erro pior.
+ */
+export function barrasDoQuadro(
+  pecas: PecaNoTempo[],
+  {
+    eixo,
+    recorte,
+    metrica = "alcance",
+  }: { eixo: EixoDoQuadro; recorte: RecorteDoQuadro; metrica?: MetricaDoQuadro },
+): BarraDoQuadro[] {
+  const faixas =
+    eixo === "horario"
+      ? BLOCOS.map((bloco) => ({ chave: `h-${bloco.indice}`, rotulo: bloco.rotulo }))
+      : DIAS_CURTOS.map((dia, indice) => ({ chave: `d-${indice}`, rotulo: dia }));
+
+  const daFaixa = (peca: PecaNoTempo, indice: number) =>
+    eixo === "horario" ? blocoDaHora(peca.hora).indice === indice : peca.dia === indice;
+
+  return faixas.map((faixa, indice) => {
+    const doGrupo = pecas.filter((peca) => daFaixa(peca, indice));
+    const soma = new Map<string, number>();
+
+    for (const peca of doGrupo) {
+      const valor = metrica === "alcance" ? peca.alcance : peca.interacoes;
+
+      if (recorte === "formato") {
+        soma.set(peca.formato, (soma.get(peca.formato) ?? 0) + valor);
+        continue;
+      }
+
+      if (peca.redes.length === 0) {
+        soma.set("sem_rede", (soma.get("sem_rede") ?? 0) + valor);
+        continue;
+      }
+
+      const parcela = valor / peca.redes.length;
+      for (const rede of peca.redes) {
+        soma.set(rede, (soma.get(rede) ?? 0) + parcela);
+      }
+    }
+
+    return {
+      chave: faixa.chave,
+      rotulo: faixa.rotulo,
+      total: [...soma.values()].reduce((total, valor) => total + valor, 0),
+      pecas: doGrupo.length,
+      fatias: [...soma.entries()]
+        .map(([chave, valor]) => ({ chave, valor }))
+        .sort((a, b) => b.valor - a.valor),
+    };
+  });
+}
+
+/** As categorias presentes nos dados, para a legenda e a ordem das pilhas. */
+export function categoriasDoQuadro(pecas: PecaNoTempo[], recorte: RecorteDoQuadro): string[] {
+  const vistas = new Set<string>();
+  for (const peca of pecas) {
+    if (recorte === "formato") vistas.add(peca.formato);
+    else if (peca.redes.length === 0) vistas.add("sem_rede");
+    else for (const rede of peca.redes) vistas.add(rede);
+  }
+  return [...vistas];
+}
+
+/**
+ * As peças de uma barra, para o painel que abre no clique.
+ *
+ * Ordenadas por alcance: quem clica numa barra alta quer saber qual peça a
+ * levantou, e essa é a primeira da lista.
+ */
+export function pecasDaBarra(pecas: PecaNoTempo[], chave: string): PecaNoTempo[] {
+  const [tipo, valor] = chave.split("-");
+  const indice = Number(valor);
+
+  return pecas
+    .filter((peca) =>
+      tipo === "h" ? blocoDaHora(peca.hora).indice === indice : peca.dia === indice,
+    )
+    .sort((a, b) => b.alcance - a.alcance);
+}
+
+/** O rótulo de uma barra, por extenso, para o cabeçalho do painel. */
+export function rotuloDaBarra(chave: string): string {
+  const [tipo, valor] = chave.split("-");
+  const indice = Number(valor);
+  return tipo === "h" ? BLOCOS[indice].rotulo : DIAS_LONGOS[indice];
 }
